@@ -22,9 +22,12 @@ function showFatalError(message) {
   banner.textContent = "Something went wrong: " + message;
 }
 
-let supabase = null;
+// NOTE: named "sb", not "supabase" — Safari throws a page-wide SyntaxError
+// if a top-level let/const shares a name with an existing global (the
+// Supabase library itself creates window.supabase).
+let sb = null;
 try {
-  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 } catch (err) {
   showFatalError("Couldn't set up Supabase — check js/config.js. (" + err.message + ")");
 }
@@ -52,13 +55,13 @@ const els = {
 
 let currentPlayer = null;
 
-// ---------- LOGIN (attached first, works even if Supabase failed to load) ----------
+// ---------- LOGIN ----------
 if (els.loginForm) {
   els.loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     els.loginError.hidden = true;
 
-    if (!supabase) {
+    if (!sb) {
       els.loginError.textContent = "App isn't connected to the database yet — see the error banner above.";
       els.loginError.hidden = false;
       return;
@@ -68,7 +71,7 @@ if (els.loginForm) {
     const pin = els.loginPin.value.trim();
     if (!name || !pin) return;
 
-    const { data, error } = await supabase
+    const { data, error } = await sb
       .from("players")
       .select("*")
       .ilike("name", name)
@@ -111,7 +114,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   });
 });
 
-// ---------- VIEW SWITCHING (explicit, doesn't rely on the [hidden] attribute alone) ----------
+// ---------- VIEW SWITCHING ----------
 function showAppShell(show) {
   els.viewLogin.hidden = show;
   els.viewLogin.style.display = show ? "none" : "flex";
@@ -120,11 +123,11 @@ function showAppShell(show) {
 }
 
 // ---------- BOOT ----------
-showAppShell(false); // always start on login, even if something below throws
+showAppShell(false);
 init();
 
 async function init() {
-  if (!supabase) return; // fatal error banner already shown
+  if (!sb) return;
   const cached = localStorage.getItem(SESSION_KEY);
   if (cached) {
     try {
@@ -158,7 +161,7 @@ async function loadHomeTeam() {
     els.homeTeam.textContent = "No team yet — ask your admin to assign you one.";
     return;
   }
-  const { data } = await supabase
+  const { data } = await sb
     .from("teams")
     .select("name")
     .eq("id", currentPlayer.team_id)
@@ -166,9 +169,9 @@ async function loadHomeTeam() {
   els.homeTeam.textContent = data ? `Team: ${data.name}` : "No team yet";
 }
 
-// ---------- TEAMS VIEW (read-only list, phase 2 builds this out) ----------
+// ---------- TEAMS VIEW ----------
 async function loadTeamsList() {
-  const { data } = await supabase.from("teams").select("*").order("created_at");
+  const { data } = await sb.from("teams").select("*").order("created_at");
   els.teamsList.innerHTML = "";
   (data || []).forEach((team) => {
     const row = document.createElement("div");
@@ -183,7 +186,7 @@ async function loadTeamsList() {
 
 // ---------- ADMIN ----------
 async function loadAdminData() {
-  const { data: teams } = await supabase.from("teams").select("*").order("created_at");
+  const { data: teams } = await sb.from("teams").select("*").order("created_at");
   els.newPlayerTeamSelect.innerHTML = `<option value="">No team yet</option>`;
   (teams || []).forEach((t) => {
     const opt = document.createElement("option");
@@ -192,7 +195,7 @@ async function loadAdminData() {
     els.newPlayerTeamSelect.appendChild(opt);
   });
 
-  const { data: players } = await supabase.from("players").select("*").order("created_at");
+  const { data: players } = await sb.from("players").select("*").order("created_at");
   els.adminPlayerList.innerHTML = "";
   (players || []).forEach((p) => {
     const row = document.createElement("div");
@@ -209,7 +212,7 @@ if (els.addPlayerForm) {
     const pin = document.getElementById("new-player-pin").value.trim();
     const team_id = els.newPlayerTeamSelect.value || null;
 
-    const { error } = await supabase.from("players").insert({ name, pin, team_id });
+    const { error } = await sb.from("players").insert({ name, pin, team_id });
     if (error) {
       alert("Couldn't add worker: " + error.message);
       return;
@@ -224,7 +227,7 @@ if (els.addTeamForm) {
     e.preventDefault();
     const name = document.getElementById("new-team-name").value.trim();
 
-    const { error } = await supabase.from("teams").insert({ name, status: "approved" });
+    const { error } = await sb.from("teams").insert({ name, status: "approved" });
     if (error) {
       alert("Couldn't add team: " + error.message);
       return;
