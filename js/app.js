@@ -1,4 +1,5 @@
 // ===== FLIP OUT GAMES DAY — APP.JS (Phase 1) =====
+window.__appJsRan = true; // used by the on-page diagnostic strip in index.html
 
 // Catch any error anywhere in the app and show it on screen instead of
 // failing silently — this is what lets us debug without dev tools.
@@ -52,45 +53,51 @@ const els = {
 let currentPlayer = null;
 
 // ---------- LOGIN (attached first, works even if Supabase failed to load) ----------
-els.loginForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  els.loginError.hidden = true;
+if (els.loginForm) {
+  els.loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    els.loginError.hidden = true;
 
-  if (!supabase) {
-    els.loginError.textContent = "App isn't connected to the database yet — see the error banner above.";
-    els.loginError.hidden = false;
-    return;
-  }
+    if (!supabase) {
+      els.loginError.textContent = "App isn't connected to the database yet — see the error banner above.";
+      els.loginError.hidden = false;
+      return;
+    }
 
-  const name = els.loginName.value.trim();
-  const pin = els.loginPin.value.trim();
-  if (!name || !pin) return;
+    const name = els.loginName.value.trim();
+    const pin = els.loginPin.value.trim();
+    if (!name || !pin) return;
 
-  const { data, error } = await supabase
-    .from("players")
-    .select("*")
-    .ilike("name", name)
-    .eq("pin", pin)
-    .maybeSingle();
+    const { data, error } = await supabase
+      .from("players")
+      .select("*")
+      .ilike("name", name)
+      .eq("pin", pin)
+      .maybeSingle();
 
-  if (error || !data) {
-    els.loginError.textContent = "No match for that name + PIN. Check with your admin.";
-    els.loginError.hidden = false;
-    return;
-  }
+    if (error || !data) {
+      els.loginError.textContent = "No match for that name + PIN. Check with your admin.";
+      els.loginError.hidden = false;
+      return;
+    }
 
-  currentPlayer = data;
-  localStorage.setItem(SESSION_KEY, JSON.stringify(currentPlayer));
-  await enterApp();
-});
+    currentPlayer = data;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(currentPlayer));
+    await enterApp();
+  });
+} else {
+  showFatalError("Couldn't find the login form in the page (id='login-form' missing).");
+}
 
-els.logoutBtn.addEventListener("click", () => {
-  localStorage.removeItem(SESSION_KEY);
-  currentPlayer = null;
-  els.loginName.value = "";
-  els.loginPin.value = "";
-  showAppShell(false);
-});
+if (els.logoutBtn) {
+  els.logoutBtn.addEventListener("click", () => {
+    localStorage.removeItem(SESSION_KEY);
+    currentPlayer = null;
+    els.loginName.value = "";
+    els.loginPin.value = "";
+    showAppShell(false);
+  });
+}
 
 // ---------- NAV ----------
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -195,31 +202,35 @@ async function loadAdminData() {
   });
 }
 
-els.addPlayerForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const name = document.getElementById("new-player-name").value.trim();
-  const pin = document.getElementById("new-player-pin").value.trim();
-  const team_id = els.newPlayerTeamSelect.value || null;
+if (els.addPlayerForm) {
+  els.addPlayerForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("new-player-name").value.trim();
+    const pin = document.getElementById("new-player-pin").value.trim();
+    const team_id = els.newPlayerTeamSelect.value || null;
 
-  const { error } = await supabase.from("players").insert({ name, pin, team_id });
-  if (error) {
-    alert("Couldn't add worker: " + error.message);
-    return;
-  }
-  e.target.reset();
-  await loadAdminData();
-});
+    const { error } = await supabase.from("players").insert({ name, pin, team_id });
+    if (error) {
+      alert("Couldn't add worker: " + error.message);
+      return;
+    }
+    e.target.reset();
+    await loadAdminData();
+  });
+}
 
-els.addTeamForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const name = document.getElementById("new-team-name").value.trim();
+if (els.addTeamForm) {
+  els.addTeamForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("new-team-name").value.trim();
 
-  const { error } = await supabase.from("teams").insert({ name, status: "approved" });
-  if (error) {
-    alert("Couldn't add team: " + error.message);
-    return;
-  }
-  e.target.reset();
-  await loadAdminData();
-  await loadTeamsList();
-});
+    const { error } = await supabase.from("teams").insert({ name, status: "approved" });
+    if (error) {
+      alert("Couldn't add team: " + error.message);
+      return;
+    }
+    e.target.reset();
+    await loadAdminData();
+    await loadTeamsList();
+  });
+}
