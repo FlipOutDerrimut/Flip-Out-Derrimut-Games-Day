@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="css/style.css?v=3" />
+<link rel="stylesheet" href="css/style.css?v=5" />
 </head>
 <body>
 
@@ -60,11 +60,9 @@
       <div class="card">
         <p class="card__eyebrow">You're in</p>
         <p id="home-welcome" class="card__big">Welcome!</p>
-        <p id="home-team" class="card__sub">No team yet</p>
       </div>
-      <div class="card card--muted">
-        <p>Teams, leaderboards, cheers, weather &amp; water challenges, the timetable and more are landing here in the next build phases. This screen just confirms your login is wired up correctly.</p>
-      </div>
+
+      <div id="my-team-section"></div>
     </section>
 
     <!-- TEAMS (placeholder) -->
@@ -76,6 +74,11 @@
     <!-- ADMIN -->
     <section id="view-admin" class="view" hidden>
       <h2 class="view-title">Admin</h2>
+
+      <div class="card">
+        <h3 class="card__heading">Teams awaiting approval</h3>
+        <div id="pending-teams-list" class="stack"></div>
+      </div>
 
       <div class="card">
         <h3 class="card__heading">Add a worker</h3>
@@ -124,90 +127,8 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=4"></script>
-<script src="js/app.js?v=4"></script>
-<script>
-  window.addEventListener("load", function () {
-    var diag = document.createElement("div");
-    diag.id = "boot-diagnostic";
-    diag.style.cssText =
-      "position:fixed;bottom:10px;left:10px;right:10px;background:#111;color:#7CFC00;" +
-      "font-family:monospace;font-size:11px;line-height:1.6;padding:10px;border-radius:8px;" +
-      "z-index:99999;white-space:pre-wrap;";
-    diag.textContent =
-      "Supabase library: " + (window.supabase ? "OK" : "MISSING") + "\n" +
-      "config.js loaded: " + (typeof SUPABASE_URL !== "undefined" ? "OK (" + SUPABASE_URL + ")" : "MISSING") + "\n" +
-      "app.js ran: " + (window.__appJsRan ? "OK" : "MISSING — this is the problem") + "\n" +
-      "login form found: " + (document.getElementById("login-form") ? "OK" : "MISSING");
-    document.body.appendChild(diag);
-  });
-</script>
-</body>
-</html>      </div>
-      <div class="card card--muted">
-        <p>Teams, leaderboards, cheers, weather &amp; water challenges, the timetable and more are landing here in the next build phases. This screen just confirms your login is wired up correctly.</p>
-      </div>
-    </section>
-
-    <!-- TEAMS (placeholder) -->
-    <section id="view-teams" class="view" hidden>
-      <h2 class="view-title">Teams</h2>
-      <div id="teams-list" class="stack"></div>
-    </section>
-
-    <!-- ADMIN -->
-    <section id="view-admin" class="view" hidden>
-      <h2 class="view-title">Admin</h2>
-
-      <div class="card">
-        <h3 class="card__heading">Add a worker</h3>
-        <form id="add-player-form" class="stack-form">
-          <label class="field">
-            <span>Name</span>
-            <input type="text" id="new-player-name" required />
-          </label>
-          <label class="field">
-            <span>PIN (4 digits)</span>
-            <input type="tel" id="new-player-pin" inputmode="numeric" maxlength="6" required />
-          </label>
-          <label class="field">
-            <span>Team (optional)</span>
-            <select id="new-player-team"><option value="">No team yet</option></select>
-          </label>
-          <button type="submit" class="btn btn--primary btn--block">Add worker</button>
-        </form>
-      </div>
-
-      <div class="card">
-        <h3 class="card__heading">Add a team</h3>
-        <form id="add-team-form" class="stack-form">
-          <label class="field">
-            <span>Team name</span>
-            <input type="text" id="new-team-name" required />
-          </label>
-          <button type="submit" class="btn btn--secondary btn--block">Add team</button>
-        </form>
-      </div>
-
-      <div class="card">
-        <h3 class="card__heading">All workers</h3>
-        <div id="admin-player-list" class="stack"></div>
-      </div>
-    </section>
-
-  </main>
-
-  <nav class="tab-bar">
-    <button class="tab-btn is-active" data-view="home">Home</button>
-    <button class="tab-btn" data-view="teams">Teams</button>
-    <button class="tab-btn" data-view="admin" id="admin-tab" hidden>Admin</button>
-  </nav>
-
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=3"></script>
-<script src="js/app.js?v=3"></script>
+<script src="js/config.js?v=5"></script>
+<script src="js/app.js?v=5"></script>
 <script>
   window.addEventListener("load", function () {
     var diag = document.createElement("div");
