@@ -1,6 +1,32 @@
 // ===== FLIP OUT GAMES DAY — APP.JS (Phase 1) =====
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Catch any error anywhere in the app and show it on screen instead of
+// failing silently — this is what lets us debug without dev tools.
+window.addEventListener("error", (e) => showFatalError(e.message));
+window.addEventListener("unhandledrejection", (e) =>
+  showFatalError((e.reason && e.reason.message) || String(e.reason))
+);
+
+function showFatalError(message) {
+  let banner = document.getElementById("fatal-error-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "fatal-error-banner";
+    banner.style.cssText =
+      "position:fixed;top:0;left:0;right:0;z-index:9999;background:#FF509F;" +
+      "color:#0F041D;font-family:sans-serif;font-size:13px;padding:12px 16px;" +
+      "text-align:center;font-weight:bold;";
+    document.body.prepend(banner);
+  }
+  banner.textContent = "Something went wrong: " + message;
+}
+
+let supabase = null;
+try {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch (err) {
+  showFatalError("Couldn't set up Supabase — check js/config.js. (" + err.message + ")");
+}
 
 const SESSION_KEY = "fo_games_day_session";
 
@@ -25,36 +51,19 @@ const els = {
 
 let currentPlayer = null;
 
-// ---------- BOOT ----------
-init();
-
-async function init() {
-  const cached = localStorage.getItem(SESSION_KEY);
-  if (cached) {
-    try {
-      currentPlayer = JSON.parse(cached);
-      await enterApp();
-      return;
-    } catch (e) {
-      localStorage.removeItem(SESSION_KEY);
-    }
-  }
-  showLogin();
-}
-
-function showLogin() {
-  els.viewLogin.hidden = false;
-  els.appShell.hidden = true;
-}
-
-// ---------- LOGIN ----------
+// ---------- LOGIN (attached first, works even if Supabase failed to load) ----------
 els.loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   els.loginError.hidden = true;
 
+  if (!supabase) {
+    els.loginError.textContent = "App isn't connected to the database yet — see the error banner above.";
+    els.loginError.hidden = false;
+    return;
+  }
+
   const name = els.loginName.value.trim();
   const pin = els.loginPin.value.trim();
-
   if (!name || !pin) return;
 
   const { data, error } = await supabase
@@ -80,26 +89,8 @@ els.logoutBtn.addEventListener("click", () => {
   currentPlayer = null;
   els.loginName.value = "";
   els.loginPin.value = "";
-  els.appShell.hidden = true;
-  showLogin();
+  showAppShell(false);
 });
-
-// ---------- ENTER APP ----------
-async function enterApp() {
-  els.viewLogin.hidden = true;
-  els.appShell.hidden = false;
-
-  els.headerName.textContent = currentPlayer.name;
-  els.homeWelcome.textContent = `Hey ${currentPlayer.name.split(" ")[0]}!`;
-
-  if (currentPlayer.is_admin) {
-    els.adminTab.hidden = false;
-    await loadAdminData();
-  }
-
-  await loadHomeTeam();
-  await loadTeamsList();
-}
 
 // ---------- NAV ----------
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -112,6 +103,47 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     document.getElementById(`view-${btn.dataset.view}`).hidden = false;
   });
 });
+
+// ---------- VIEW SWITCHING (explicit, doesn't rely on the [hidden] attribute alone) ----------
+function showAppShell(show) {
+  els.viewLogin.hidden = show;
+  els.viewLogin.style.display = show ? "none" : "flex";
+  els.appShell.hidden = !show;
+  els.appShell.style.display = show ? "flex" : "none";
+}
+
+// ---------- BOOT ----------
+showAppShell(false); // always start on login, even if something below throws
+init();
+
+async function init() {
+  if (!supabase) return; // fatal error banner already shown
+  const cached = localStorage.getItem(SESSION_KEY);
+  if (cached) {
+    try {
+      currentPlayer = JSON.parse(cached);
+      await enterApp();
+    } catch (e) {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  }
+}
+
+// ---------- ENTER APP ----------
+async function enterApp() {
+  showAppShell(true);
+
+  els.headerName.textContent = currentPlayer.name;
+  els.homeWelcome.textContent = `Hey ${currentPlayer.name.split(" ")[0]}!`;
+
+  if (currentPlayer.is_admin) {
+    els.adminTab.hidden = false;
+    await loadAdminData();
+  }
+
+  await loadHomeTeam();
+  await loadTeamsList();
+}
 
 // ---------- HOME ----------
 async function loadHomeTeam() {
