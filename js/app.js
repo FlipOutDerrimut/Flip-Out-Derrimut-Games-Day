@@ -52,6 +52,19 @@ const els = {
   adminPlayerList: document.getElementById("admin-player-list"),
   pendingTeamsList: document.getElementById("pending-teams-list"),
   teamsList: document.getElementById("teams-list"),
+  teamLeaderboard: document.getElementById("team-leaderboard"),
+  sendCheerForm: document.getElementById("send-cheer-form"),
+  cheerTargetType: document.getElementById("cheer-target-type"),
+  cheerTeamField: document.getElementById("cheer-team-field"),
+  cheerTeamSelect: document.getElementById("cheer-team-select"),
+  cheerPlayerField: document.getElementById("cheer-player-field"),
+  cheerPlayerSelect: document.getElementById("cheer-player-select"),
+  cheerMessage: document.getElementById("cheer-message"),
+  cheersFeed: document.getElementById("cheers-feed"),
+  nominateForm: document.getElementById("nominate-form"),
+  nominateCategory: document.getElementById("nominate-category"),
+  nominatePlayer: document.getElementById("nominate-player"),
+  awardsTally: document.getElementById("awards-tally"),
 };
 
 let currentPlayer = null;
@@ -151,10 +164,16 @@ async function enterApp() {
     els.adminTab.hidden = false;
     await loadAdminData();
     await loadPendingTeams();
+    await populateNominatePlayerSelect();
+    await renderAwardsTally();
   }
 
   await renderMyTeam();
   await loadTeamsList();
+  await renderTeamLeaderboard();
+  await populateCheerTeamSelect();
+  await populateCheerPlayerSelect();
+  await loadCheersFeed();
 }
 
 // Re-fetch this player's own row (their team_id / player_number may have
@@ -495,4 +514,198 @@ if (els.addTeamForm) {
     await loadAdminData();
     await loadTeamsList();
   });
+}
+
+// ---------- PHASE 3: TEAM LEADERBOARD ----------
+async function renderTeamLeaderboard() {
+  const { data: teams } = await sb.from("teams").select("id, name").eq("status", "approved");
+  const { data: allCheers } = await sb.from("cheers").select("team_id");
+
+  const counts = {};
+  (allCheers || []).forEach((c) => {
+    counts[c.team_id] = (counts[c.team_id] || 0) + 1;
+  });
+
+  const ranked = (teams || [])
+    .map((t) => ({ name: t.name, score: counts[t.id] || 0 }))
+    .sort((a, b) => b.score - a.score);
+
+  els.teamLeaderboard.innerHTML = ranked.length
+    ? ranked
+        .map(
+          (t, i) => `
+      <div class="rank-row">
+        <span class="rank-row__place">${i + 1}</span>
+        <span class="rank-row__name">${escapeHtml(t.name)}</span>
+        <span class="rank-row__score">${t.score} cheer${t.score === 1 ? "" : "s"}</span>
+      </div>`
+        )
+        .join("")
+    : `<p class="card__sub">No approved teams yet.</p>`;
+}
+
+// ---------- PHASE 3: SEND A CHEER ----------
+async function populateCheerTeamSelect() {
+  const { data: teams } = await sb.from("teams").select("id, name").eq("status", "approved").order("name");
+  els.cheerTeamSelect.innerHTML = (teams || [])
+    .map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
+    .join("");
+}
+
+async function populateCheerPlayerSelect() {
+  const { data: players } = await sb.from("players").select("id, name, team_id").not("team_id", "is", null).order("name");
+  const { data: teams } = await sb.from("teams").select("id, name");
+  const teamNameById = {};
+  (teams || []).forEach((t) => (teamNameById[t.id] = t.name));
+
+  els.cheerPlayerSelect.innerHTML = (players || [])
+    .map(
+      (p) =>
+        `<option value="${p.id}" data-team-id="${p.team_id}">${escapeHtml(p.name)} (${escapeHtml(teamNameById[p.team_id] || "no team")})</option>`
+    )
+    .join("");
+}
+
+if (els.cheerTargetType) {
+  els.cheerTargetType.addEventListener("change", () => {
+    const isPlayer = els.cheerTargetType.value === "player";
+    els.cheerTeamField.hidden = isPlayer;
+    els.cheerPlayerField.hidden = !isPlayer;
+  });
+}
+
+if (els.sendCheerForm) {
+  els.sendCheerForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const isPlayer = els.cheerTargetType.value === "player";
+    const message = els.cheerMessage.value.trim() || null;
+
+    let team_id, player_id;
+    if (isPlayer) {
+      const opt = els.cheerPlayerSelect.selectedOptions[0];
+      if (!opt) return;
+      player_id = opt.value;
+      team_id = opt.dataset.teamId;
+    } else {
+      team_id = els.cheerTeamSelect.value;
+      player_id = null;
+      if (!team_id) return;
+    }
+
+    const { error } = await sb.from("cheers").insert({
+      from_player_id: currentPlayer.id,
+      team_id,
+      player_id,
+      message,
+    });
+    if (error) {
+      alert("Couldn't send cheer: " + error.message);
+      return;
+    }
+
+    els.cheerMessage.value = "";
+    await renderTeamLeaderboard();
+    await loadCheersFeed();
+  });
+}
+
+async function loadCheersFeed() {
+  const { data: cheersData } = await sb.from("cheers").select("*").order("created_at", { ascending: false }).limit(20);
+  els.cheersFeed.innerHTML = "";
+
+  if (!cheersData || cheersData.length === 0) {
+    els.cheersFeed.innerHTML = `<p class="card__sub">No cheers yet — be the first!</p>`;
+    return;
+  }
+
+  const playerIds = new Set();
+  const teamIds = new Set();
+  cheersData.forEach((c) => {
+    if (c.from_player_id) playerIds.add(c.from_player_id);
+    if (c.player_id) playerIds.add(c.player_id);
+    if (c.team_id) teamIds.add(c.team_id);
+  });
+
+  const [{ data: players }, { data: teams }] = await Promise.all([
+    sb.from("players").select("id, name").in("id", Array.from(playerIds)),
+    sb.from("teams").select("id, name").in("id", Array.from(teamIds)),
+  ]);
+  const playerNameById = {};
+  (players || []).forEach((p) => (playerNameById[p.id] = p.name));
+  const teamNameById = {};
+  (teams || []).forEach((t) => (teamNameById[t.id] = t.name));
+
+  els.cheersFeed.innerHTML = cheersData
+    .map((c) => {
+      const fromName = playerNameById[c.from_player_id] || "Someone";
+      const target = c.player_id ? playerNameById[c.player_id] || "a player" : teamNameById[c.team_id] || "a team";
+      const time = new Date(c.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return `
+      <div class="cheer-item">
+        <div>🎉 <strong>${escapeHtml(fromName)}</strong> cheered for <strong>${escapeHtml(target)}</strong>${c.message ? `: "${escapeHtml(c.message)}"` : ""}</div>
+        <div class="cheer-item__meta">${time}</div>
+      </div>`;
+    })
+    .join("");
+}
+
+// ---------- PHASE 3: ADMIN-ONLY DAILY AWARDS ----------
+async function populateNominatePlayerSelect() {
+  const { data: players } = await sb.from("players").select("id, name").order("name");
+  els.nominatePlayer.innerHTML = (players || [])
+    .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
+    .join("");
+}
+
+if (els.nominateForm) {
+  els.nominateForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const category = els.nominateCategory.value;
+    const player_id = els.nominatePlayer.value;
+    if (!player_id) return;
+
+    const { error } = await sb.from("category_awards").insert({
+      category,
+      player_id,
+      nominated_by: currentPlayer.id,
+    });
+    if (error) {
+      alert("Couldn't add nomination: " + error.message);
+      return;
+    }
+    await renderAwardsTally();
+  });
+}
+
+async function renderAwardsTally() {
+  if (!els.awardsTally) return;
+  const { data: awards } = await sb.from("category_awards").select("category, player_id");
+  const { data: players } = await sb.from("players").select("id, name");
+  const nameById = {};
+  (players || []).forEach((p) => (nameById[p.id] = p.name));
+
+  const byCategory = {};
+  (awards || []).forEach((a) => {
+    byCategory[a.category] = byCategory[a.category] || {};
+    byCategory[a.category][a.player_id] = (byCategory[a.category][a.player_id] || 0) + 1;
+  });
+
+  const categories = Object.keys(byCategory);
+  if (categories.length === 0) {
+    els.awardsTally.innerHTML = `<p class="card__sub">No nominations yet.</p>`;
+    return;
+  }
+
+  els.awardsTally.innerHTML = categories
+    .map((cat) => {
+      const ranked = Object.entries(byCategory[cat])
+        .map(([playerId, count]) => ({ name: nameById[playerId] || "Unknown", count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+      const rows = ranked
+        .map((r) => `<div class="roster-row"><span>${escapeHtml(r.name)}</span><span class="roster-row__tag">${r.count} vote${r.count === 1 ? "" : "s"}</span></div>`)
+        .join("");
+      return `<p class="card__heading" style="margin-top:14px;">${escapeHtml(cat)}</p>${rows}`;
+    })
+    .join("");
 }
