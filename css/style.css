@@ -251,6 +251,39 @@ html, body {
 }
 .leader-star { color: var(--fo-pink); margin-left: 6px; }
 
+/* ===== PHASE 3: LEADERBOARD & CHEERS ===== */
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--fo-grey);
+}
+.rank-row:last-child { border-bottom: none; }
+.rank-row__place {
+  width: 24px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--fo-purple);
+}
+.rank-row__name { flex: 1; font-weight: 700; }
+.rank-row__score {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fo-green);
+  background: rgba(153,198,62,0.15);
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.cheer-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--fo-grey);
+  font-size: 14px;
+}
+.cheer-item:last-child { border-bottom: none; }
+.cheer-item__meta { color: #6B6B6B; font-size: 12px; margin-top: 2px; }
+
 /* ===== TAB BAR ===== */
 .tab-bar {
   position: fixed;
