@@ -1,4 +1,4 @@
-// ===== FLIP OUT GAMES DAY — APP.JS (Phase 1) =====
+// ===== FLIP OUT GAMES DAY — APP.JS (Phase 1 + 2) =====
 window.__appJsRan = true; // used by the on-page diagnostic strip in index.html
 
 // Catch any error anywhere in the app and show it on screen instead of
@@ -44,12 +44,13 @@ const els = {
   headerName: document.getElementById("header-name"),
   logoutBtn: document.getElementById("logout-btn"),
   homeWelcome: document.getElementById("home-welcome"),
-  homeTeam: document.getElementById("home-team"),
+  myTeamSection: document.getElementById("my-team-section"),
   adminTab: document.getElementById("admin-tab"),
   addPlayerForm: document.getElementById("add-player-form"),
   addTeamForm: document.getElementById("add-team-form"),
   newPlayerTeamSelect: document.getElementById("new-player-team"),
   adminPlayerList: document.getElementById("admin-player-list"),
+  pendingTeamsList: document.getElementById("pending-teams-list"),
   teamsList: document.getElementById("teams-list"),
 };
 
@@ -149,42 +150,300 @@ async function enterApp() {
   if (currentPlayer.is_admin) {
     els.adminTab.hidden = false;
     await loadAdminData();
+    await loadPendingTeams();
   }
 
-  await loadHomeTeam();
+  await renderMyTeam();
   await loadTeamsList();
 }
 
-// ---------- HOME ----------
-async function loadHomeTeam() {
+// Re-fetch this player's own row (their team_id / player_number may have
+// changed) and keep localStorage in sync.
+async function refreshCurrentPlayer() {
+  const { data } = await sb.from("players").select("*").eq("id", currentPlayer.id).maybeSingle();
+  if (data) {
+    currentPlayer = data;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(currentPlayer));
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str == null ? "" : String(str);
+  return div.innerHTML;
+}
+
+// ---------- MY TEAM (Home tab) ----------
+async function renderMyTeam() {
+  await refreshCurrentPlayer();
+
   if (!currentPlayer.team_id) {
-    els.homeTeam.textContent = "No team yet — ask your admin to assign you one.";
+    await renderNoTeamState();
     return;
   }
-  const { data } = await sb
-    .from("teams")
-    .select("name")
-    .eq("id", currentPlayer.team_id)
-    .maybeSingle();
-  els.homeTeam.textContent = data ? `Team: ${data.name}` : "No team yet";
-}
 
-// ---------- TEAMS VIEW ----------
-async function loadTeamsList() {
-  const { data } = await sb.from("teams").select("*").order("created_at");
-  els.teamsList.innerHTML = "";
-  (data || []).forEach((team) => {
-    const row = document.createElement("div");
-    row.className = "roster-row";
-    row.innerHTML = `<span>${team.name}</span><span class="roster-row__tag">${team.status}</span>`;
-    els.teamsList.appendChild(row);
-  });
-  if (!data || data.length === 0) {
-    els.teamsList.innerHTML = `<p class="card card--muted">No teams yet.</p>`;
+  const { data: team } = await sb.from("teams").select("*").eq("id", currentPlayer.team_id).maybeSingle();
+  if (!team) {
+    await renderNoTeamState();
+    return;
+  }
+
+  if (team.status === "pending") {
+    els.myTeamSection.innerHTML = `
+      <div class="card">
+        <div class="team-header">
+          ${team.logo_url ? `<img src="${escapeHtml(team.logo_url)}" class="team-header__logo" alt="">` : ""}
+          <div>
+            <p class="team-header__name">${escapeHtml(team.name)}</p>
+            <span class="badge badge--pending">Awaiting admin approval</span>
+          </div>
+        </div>
+        <p class="card__sub">You'll be able to pick a player number and see your team roster once your admin approves this team.</p>
+      </div>`;
+    return;
+  }
+
+  if (team.status === "rejected") {
+    els.myTeamSection.innerHTML = `
+      <div class="card">
+        <div class="team-header">
+          <div>
+            <p class="team-header__name">${escapeHtml(team.name)}</p>
+            <span class="badge badge--rejected">Not approved</span>
+          </div>
+        </div>
+        <p class="card__sub">This team wasn't approved. Pick a different team below.</p>
+        <button id="pick-again-btn" class="btn btn--secondary btn--block" style="margin-top:12px;">Choose a different team</button>
+      </div>`;
+    document.getElementById("pick-again-btn").addEventListener("click", async () => {
+      await sb.from("players").update({ team_id: null }).eq("id", currentPlayer.id);
+      await renderMyTeam();
+    });
+    return;
+  }
+
+  // approved
+  const { data: members } = await sb
+    .from("players")
+    .select("*")
+    .eq("team_id", team.id)
+    .order("player_number", { ascending: true, nullsFirst: false });
+
+  const leader = (members || []).find((m) => m.id === team.leader_id);
+
+  let numberSectionHtml = "";
+  if (currentPlayer.player_number == null) {
+    numberSectionHtml = `
+      <form id="pick-number-form" class="stack-form" style="margin-top:14px;">
+        <label class="field">
+          <span>Pick your player number</span>
+          <input type="number" id="pick-number-input" min="0" required />
+        </label>
+        <p id="pick-number-error" class="login-error" hidden></p>
+        <button type="submit" class="btn btn--primary btn--block">Save my number</button>
+      </form>`;
+  }
+
+  let leaderSectionHtml = "";
+  if (!team.leader_id) {
+    leaderSectionHtml = `<button id="become-leader-btn" class="btn btn--secondary btn--block" style="margin-top:12px;">Become team leader</button>`;
+  } else if (team.leader_id === currentPlayer.id) {
+    leaderSectionHtml = `<p class="card__sub" style="margin-top:12px;">You're the team leader <span class="leader-star">★</span></p>`;
+  } else if (leader) {
+    leaderSectionHtml = `<p class="card__sub" style="margin-top:12px;">Team leader: ${escapeHtml(leader.name)} <span class="leader-star">★</span></p>`;
+  }
+
+  const rosterHtml = (members || [])
+    .map(
+      (m) => `
+      <div class="member-row">
+        <span>${m.player_number != null ? `<span class="member-row__number">${m.player_number}</span>` : ""}${escapeHtml(m.name)}${m.id === team.leader_id ? '<span class="leader-star">★</span>' : ""}</span>
+      </div>`
+    )
+    .join("");
+
+  els.myTeamSection.innerHTML = `
+    <div class="card">
+      <div class="team-header">
+        ${team.logo_url ? `<img src="${escapeHtml(team.logo_url)}" class="team-header__logo" alt="">` : ""}
+        <div>
+          <p class="team-header__name">${escapeHtml(team.name)}</p>
+          <span class="badge badge--approved">Approved</span>
+        </div>
+      </div>
+      ${numberSectionHtml}
+      ${leaderSectionHtml}
+    </div>
+    <div class="card">
+      <h3 class="card__heading">Team roster</h3>
+      <div class="stack">${rosterHtml || `<p class="card__sub">No members yet.</p>`}</div>
+    </div>`;
+
+  const numberForm = document.getElementById("pick-number-form");
+  if (numberForm) {
+    numberForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const numInput = document.getElementById("pick-number-input");
+      const num = parseInt(numInput.value, 10);
+      const errEl = document.getElementById("pick-number-error");
+      errEl.hidden = true;
+
+      const { error } = await sb.from("players").update({ player_number: num }).eq("id", currentPlayer.id);
+      if (error) {
+        errEl.textContent = error.code === "23505" ? "That number's taken on your team — try another." : "Couldn't save: " + error.message;
+        errEl.hidden = false;
+        return;
+      }
+      await renderMyTeam();
+    });
+  }
+
+  const leaderBtn = document.getElementById("become-leader-btn");
+  if (leaderBtn) {
+    leaderBtn.addEventListener("click", async () => {
+      await sb.from("teams").update({ leader_id: currentPlayer.id }).eq("id", team.id).is("leader_id", null);
+      await renderMyTeam();
+    });
   }
 }
 
-// ---------- ADMIN ----------
+async function renderNoTeamState() {
+  const { data: approvedTeams } = await sb.from("teams").select("*").eq("status", "approved").order("name");
+
+  const joinListHtml = (approvedTeams || [])
+    .map(
+      (t) => `
+      <div class="roster-row">
+        <span>${escapeHtml(t.name)}</span>
+        <button class="btn btn--secondary join-team-btn" data-team-id="${t.id}" style="padding:8px 14px;font-size:13px;">Join</button>
+      </div>`
+    )
+    .join("");
+
+  els.myTeamSection.innerHTML = `
+    <div class="card">
+      <h3 class="card__heading">Create a team</h3>
+      <form id="create-team-form" class="stack-form">
+        <label class="field">
+          <span>Team name</span>
+          <input type="text" id="create-team-name" required />
+        </label>
+        <label class="file-field">
+          <span>Team logo (optional)</span>
+          <input type="file" id="create-team-logo" accept="image/*" />
+        </label>
+        <p id="create-team-error" class="login-error" hidden></p>
+        <button type="submit" class="btn btn--primary btn--block">Create team (needs admin approval)</button>
+      </form>
+    </div>
+    <div class="card">
+      <h3 class="card__heading">Or join an existing team</h3>
+      <div class="stack">${joinListHtml || `<p class="card__sub">No approved teams yet.</p>`}</div>
+    </div>`;
+
+  document.getElementById("create-team-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("create-team-name").value.trim();
+    const fileInput = document.getElementById("create-team-logo");
+    const errEl = document.getElementById("create-team-error");
+    errEl.hidden = true;
+
+    let logoUrl = null;
+    const file = fileInput.files[0];
+    if (file) {
+      const path = `${Date.now()}-${file.name}`;
+      const { error: uploadError } = await sb.storage.from("team-logos").upload(path, file);
+      if (uploadError) {
+        errEl.textContent = "Couldn't upload logo: " + uploadError.message;
+        errEl.hidden = false;
+        return;
+      }
+      logoUrl = sb.storage.from("team-logos").getPublicUrl(path).data.publicUrl;
+    }
+
+    const { data: newTeam, error } = await sb
+      .from("teams")
+      .insert({ name, logo_url: logoUrl, status: "pending" })
+      .select()
+      .single();
+    if (error) {
+      errEl.textContent = "Couldn't create team: " + error.message;
+      errEl.hidden = false;
+      return;
+    }
+
+    await sb.from("players").update({ team_id: newTeam.id }).eq("id", currentPlayer.id);
+    await renderMyTeam();
+    await loadTeamsList();
+    if (currentPlayer.is_admin) await loadPendingTeams();
+  });
+
+  document.querySelectorAll(".join-team-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await sb.from("players").update({ team_id: btn.dataset.teamId }).eq("id", currentPlayer.id);
+      await renderMyTeam();
+    });
+  });
+}
+
+// ---------- TEAMS TAB (browse approved teams) ----------
+async function loadTeamsList() {
+  const { data } = await sb.from("teams").select("*").eq("status", "approved").order("name");
+  els.teamsList.innerHTML = "";
+
+  if (!data || data.length === 0) {
+    els.teamsList.innerHTML = `<p class="card card--muted">No approved teams yet.</p>`;
+    return;
+  }
+
+  for (const team of data) {
+    const { count } = await sb.from("players").select("*", { count: "exact", head: true }).eq("team_id", team.id);
+    const row = document.createElement("div");
+    row.className = "roster-row";
+    row.innerHTML = `<span>${escapeHtml(team.name)}</span><span class="roster-row__tag">${count || 0} member${count === 1 ? "" : "s"}</span>`;
+    els.teamsList.appendChild(row);
+  }
+}
+
+// ---------- ADMIN: PENDING TEAM APPROVALS ----------
+async function loadPendingTeams() {
+  if (!els.pendingTeamsList) return;
+  const { data } = await sb.from("teams").select("*").eq("status", "pending").order("created_at");
+  els.pendingTeamsList.innerHTML = "";
+
+  if (!data || data.length === 0) {
+    els.pendingTeamsList.innerHTML = `<p class="card__sub">No teams waiting on approval.</p>`;
+    return;
+  }
+
+  data.forEach((team) => {
+    const row = document.createElement("div");
+    row.className = "roster-row";
+    row.innerHTML = `
+      <span>${escapeHtml(team.name)}</span>
+      <span>
+        <button class="btn btn--primary approve-team-btn" data-id="${team.id}" style="padding:6px 12px;font-size:12px;">Approve</button>
+        <button class="btn btn--secondary reject-team-btn" data-id="${team.id}" style="padding:6px 12px;font-size:12px;">Reject</button>
+      </span>`;
+    els.pendingTeamsList.appendChild(row);
+  });
+
+  document.querySelectorAll(".approve-team-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await sb.from("teams").update({ status: "approved" }).eq("id", btn.dataset.id);
+      await loadPendingTeams();
+      await loadTeamsList();
+    })
+  );
+  document.querySelectorAll(".reject-team-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await sb.from("teams").update({ status: "rejected" }).eq("id", btn.dataset.id);
+      await loadPendingTeams();
+    })
+  );
+}
+
+// ---------- ADMIN: WORKERS & TEAMS (Phase 1, kept as-is) ----------
 async function loadAdminData() {
   const { data: teams } = await sb.from("teams").select("*").order("created_at");
   els.newPlayerTeamSelect.innerHTML = `<option value="">No team yet</option>`;
@@ -200,7 +459,7 @@ async function loadAdminData() {
   (players || []).forEach((p) => {
     const row = document.createElement("div");
     row.className = "roster-row";
-    row.innerHTML = `<span>${p.name}${p.is_admin ? " (admin)" : ""}</span><span class="roster-row__tag">PIN ${p.pin}</span>`;
+    row.innerHTML = `<span>${escapeHtml(p.name)}${p.is_admin ? " (admin)" : ""}</span><span class="roster-row__tag">PIN ${escapeHtml(p.pin)}</span>`;
     els.adminPlayerList.appendChild(row);
   });
 }
