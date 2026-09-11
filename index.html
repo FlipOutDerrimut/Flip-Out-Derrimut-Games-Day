@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="css/style.css?v=5" />
+<link rel="stylesheet" href="css/style.css?v=6" />
 </head>
 <body>
 
@@ -71,9 +71,71 @@
       <div id="teams-list" class="stack"></div>
     </section>
 
+    <!-- CHEERS & LEADERBOARD -->
+    <section id="view-cheers" class="view" hidden>
+      <h2 class="view-title">Cheers &amp; Leaderboard</h2>
+
+      <div class="card">
+        <h3 class="card__heading">Team leaderboard</h3>
+        <div id="team-leaderboard" class="stack"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card__heading">Send a cheer</h3>
+        <form id="send-cheer-form" class="stack-form">
+          <label class="field">
+            <span>Cheer for</span>
+            <select id="cheer-target-type">
+              <option value="team">A whole team</option>
+              <option value="player">A specific player</option>
+            </select>
+          </label>
+          <label class="field" id="cheer-team-field">
+            <span>Team</span>
+            <select id="cheer-team-select"></select>
+          </label>
+          <label class="field" id="cheer-player-field" hidden>
+            <span>Player</span>
+            <select id="cheer-player-select"></select>
+          </label>
+          <label class="field">
+            <span>Message (optional)</span>
+            <input type="text" id="cheer-message" maxlength="120" placeholder="Nice flip!" />
+          </label>
+          <button type="submit" class="btn btn--primary btn--block">Send cheer 🎉</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3 class="card__heading">Recent cheers</h3>
+        <div id="cheers-feed" class="stack"></div>
+      </div>
+    </section>
+
     <!-- ADMIN -->
     <section id="view-admin" class="view" hidden>
       <h2 class="view-title">Admin</h2>
+
+      <div class="card">
+        <h3 class="card__heading">Daily awards (admin only)</h3>
+        <form id="nominate-form" class="stack-form">
+          <label class="field">
+            <span>Category</span>
+            <select id="nominate-category">
+              <option>Best Dressed</option>
+              <option>Fairest Player</option>
+              <option>Most Enthusiastic</option>
+              <option>Team Spirit MVP</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Worker</span>
+            <select id="nominate-player"></select>
+          </label>
+          <button type="submit" class="btn btn--secondary btn--block">Add nomination</button>
+        </form>
+        <div id="awards-tally" class="stack" style="margin-top:14px;"></div>
+      </div>
 
       <div class="card">
         <h3 class="card__heading">Teams awaiting approval</h3>
@@ -121,14 +183,15 @@
   <nav class="tab-bar">
     <button class="tab-btn is-active" data-view="home">Home</button>
     <button class="tab-btn" data-view="teams">Teams</button>
+    <button class="tab-btn" data-view="cheers">Cheers</button>
     <button class="tab-btn" data-view="admin" id="admin-tab" hidden>Admin</button>
   </nav>
 
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=5"></script>
-<script src="js/app.js?v=5"></script>
+<script src="js/config.js?v=6"></script>
+<script src="js/app.js?v=6"></script>
 <script>
   window.addEventListener("load", function () {
     var diag = document.createElement("div");
