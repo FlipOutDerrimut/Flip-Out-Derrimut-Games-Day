@@ -65,6 +65,28 @@ const els = {
   nominateCategory: document.getElementById("nominate-category"),
   nominatePlayer: document.getElementById("nominate-player"),
   awardsTally: document.getElementById("awards-tally"),
+  weatherCard: document.getElementById("weather-card"),
+  sunscreenForm: document.getElementById("sunscreen-form"),
+  sunscreenPhoto: document.getElementById("sunscreen-photo"),
+  sunscreenStatus: document.getElementById("sunscreen-status"),
+  waterBtn: document.getElementById("water-btn"),
+  waterStatus: document.getElementById("water-status"),
+  tshirtForm: document.getElementById("tshirt-form"),
+  tshirtSelect: document.getElementById("tshirt-select"),
+  beachVoteList: document.getElementById("beach-vote-list"),
+  countdownsList: document.getElementById("countdowns-list"),
+  timetableList: document.getElementById("timetable-list"),
+  addCountdownForm: document.getElementById("add-countdown-form"),
+  newCountdownTitle: document.getElementById("new-countdown-title"),
+  newCountdownTime: document.getElementById("new-countdown-time"),
+  adminCountdownsList: document.getElementById("admin-countdowns-list"),
+  addTimetableForm: document.getElementById("add-timetable-form"),
+  newTimetableTime: document.getElementById("new-timetable-time"),
+  newTimetableTitle: document.getElementById("new-timetable-title"),
+  adminTimetableList: document.getElementById("admin-timetable-list"),
+  addBeachForm: document.getElementById("add-beach-form"),
+  newBeachName: document.getElementById("new-beach-name"),
+  adminBeachList: document.getElementById("admin-beach-list"),
 };
 
 let currentPlayer = null;
@@ -166,6 +188,9 @@ async function enterApp() {
     await loadPendingTeams();
     await populateNominatePlayerSelect();
     await renderAwardsTally();
+    await renderAdminCountdowns();
+    await renderAdminTimetable();
+    await renderAdminBeachOptions();
   }
 
   await renderMyTeam();
@@ -174,6 +199,11 @@ async function enterApp() {
   await populateCheerTeamSelect();
   await populateCheerPlayerSelect();
   await loadCheersFeed();
+  await renderWeather();
+  await renderWellbeingStatus();
+  await renderMyDetails();
+  await renderBeachVote();
+  await renderSchedule();
 }
 
 // Re-fetch this player's own row (their team_id / player_number may have
@@ -519,15 +549,16 @@ if (els.addTeamForm) {
 // ---------- PHASE 3: TEAM LEADERBOARD ----------
 async function renderTeamLeaderboard() {
   const { data: teams } = await sb.from("teams").select("id, name").eq("status", "approved");
-  const { data: allCheers } = await sb.from("cheers").select("team_id");
+  const { data: allPoints } = await sb.from("points_log").select("team_id, points");
 
-  const counts = {};
-  (allCheers || []).forEach((c) => {
-    counts[c.team_id] = (counts[c.team_id] || 0) + 1;
+  const totals = {};
+  (allPoints || []).forEach((p) => {
+    if (!p.team_id) return;
+    totals[p.team_id] = (totals[p.team_id] || 0) + p.points;
   });
 
   const ranked = (teams || [])
-    .map((t) => ({ name: t.name, score: counts[t.id] || 0 }))
+    .map((t) => ({ name: t.name, score: totals[t.id] || 0 }))
     .sort((a, b) => b.score - a.score);
 
   els.teamLeaderboard.innerHTML = ranked.length
@@ -537,7 +568,7 @@ async function renderTeamLeaderboard() {
       <div class="rank-row">
         <span class="rank-row__place">${i + 1}</span>
         <span class="rank-row__name">${escapeHtml(t.name)}</span>
-        <span class="rank-row__score">${t.score} cheer${t.score === 1 ? "" : "s"}</span>
+        <span class="rank-row__score">${t.score} pts</span>
       </div>`
         )
         .join("")
@@ -602,6 +633,7 @@ if (els.sendCheerForm) {
       alert("Couldn't send cheer: " + error.message);
       return;
     }
+    await sb.from("points_log").insert({ player_id: currentPlayer.id, team_id, points: 10, reason: "cheer" });
 
     els.cheerMessage.value = "";
     await renderTeamLeaderboard();
@@ -708,4 +740,302 @@ async function renderAwardsTally() {
       return `<p class="card__heading" style="margin-top:14px;">${escapeHtml(cat)}</p>${rows}`;
     })
     .join("");
+}
+
+// ---------- PHASE 4: WEATHER & SUNSCREEN TIP ----------
+// Derrimut, VIC coordinates — change these if your venue is elsewhere.
+const VENUE_LAT = -37.7838;
+const VENUE_LON = 144.7502;
+let lastKnownUvIndex = null;
+
+async function renderWeather() {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${VENUE_LAT}&longitude=${VENUE_LON}&current=temperature_2m,uv_index&timezone=Australia%2FMelbourne`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const temp = data.current && data.current.temperature_2m;
+    const uv = data.current && data.current.uv_index;
+    lastKnownUvIndex = typeof uv === "number" ? uv : null;
+
+    const tip = sunscreenTipFor(lastKnownUvIndex, temp);
+    els.weatherCard.innerHTML = `
+      <div class="weather-row">
+        <span class="weather-row__temp">${temp != null ? Math.round(temp) + "°C" : "—"}</span>
+        ${lastKnownUvIndex != null ? `<span class="card__sub">UV index ${lastKnownUvIndex.toFixed(1)}</span>` : ""}
+      </div>
+      <div class="weather-tip">${tip}</div>`;
+  } catch (e) {
+    els.weatherCard.innerHTML = `<p class="card__sub">Couldn't load weather right now.</p>`;
+  }
+}
+
+function sunscreenTipFor(uv, temp) {
+  if (uv != null) {
+    if (uv >= 8) return "UV is extreme today — reapply sunscreen every 1.5–2 hours.";
+    if (uv >= 6) return "UV is high — reapply sunscreen every 2 hours.";
+    if (uv >= 3) return "UV is moderate — reapply sunscreen every 3 hours.";
+    return "UV is low right now, but still worth reapplying every 3–4 hours.";
+  }
+  if (temp != null && temp >= 30) return "It's a hot one — reapply sunscreen every 2 hours.";
+  return "Reapply sunscreen every 2–3 hours to stay safe out there.";
+}
+
+function reapplyIntervalMinutes() {
+  if (lastKnownUvIndex != null) {
+    if (lastKnownUvIndex >= 8) return 90;
+    if (lastKnownUvIndex >= 6) return 120;
+    return 180;
+  }
+  return 150;
+}
+
+// ---------- PHASE 4: SUNSCREEN & WATER LOGGING ----------
+function startOfTodayIso() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+async function renderWellbeingStatus() {
+  const { data: todaysLogs } = await sb
+    .from("points_log")
+    .select("*")
+    .eq("player_id", currentPlayer.id)
+    .gte("created_at", startOfTodayIso())
+    .order("created_at", { ascending: false });
+
+  const sunscreenLogs = (todaysLogs || []).filter((l) => l.reason === "sunscreen");
+  const waterLogs = (todaysLogs || []).filter((l) => l.reason === "water");
+
+  let reminderHtml = "";
+  if (sunscreenLogs.length === 0) {
+    els.sunscreenStatus.textContent = "You haven't logged sunscreen yet today.";
+    reminderHtml = `<div class="reminder-banner">☀️ Don't forget your first sunscreen application!</div>`;
+  } else {
+    const lastTime = new Date(sunscreenLogs[0].created_at);
+    const minsAgo = Math.round((Date.now() - lastTime.getTime()) / 60000);
+    els.sunscreenStatus.textContent = `Last applied ${lastTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (${sunscreenLogs.length} time${sunscreenLogs.length === 1 ? "" : "s"} today).`;
+    if (minsAgo >= reapplyIntervalMinutes()) {
+      reminderHtml = `<div class="reminder-banner">☀️ Time to reapply sunscreen — it's been ${minsAgo} minutes!</div>`;
+    }
+  }
+  const existingBanner = document.querySelector("#view-wellbeing .reminder-banner");
+  if (existingBanner) existingBanner.remove();
+  if (reminderHtml) els.weatherCard.parentElement.insertAdjacentHTML("beforebegin", reminderHtml);
+
+  els.waterStatus.textContent =
+    waterLogs.length === 0 ? "You haven't logged water today." : `${waterLogs.length} water break${waterLogs.length === 1 ? "" : "s"} logged today.`;
+}
+
+async function logPoints(reason, points, photoFile) {
+  let photo_url = null;
+  if (photoFile) {
+    const path = `${currentPlayer.id}-${Date.now()}-${photoFile.name}`;
+    const { error: uploadError } = await sb.storage.from("proof-photos").upload(path, photoFile);
+    if (!uploadError) {
+      photo_url = sb.storage.from("proof-photos").getPublicUrl(path).data.publicUrl;
+    }
+  }
+  await sb.from("points_log").insert({
+    player_id: currentPlayer.id,
+    team_id: currentPlayer.team_id,
+    points,
+    reason,
+    photo_url,
+  });
+  await renderWellbeingStatus();
+  await renderTeamLeaderboard();
+}
+
+if (els.sunscreenForm) {
+  els.sunscreenForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const file = els.sunscreenPhoto.files[0] || null;
+    await logPoints("sunscreen", 10, file);
+    els.sunscreenForm.reset();
+  });
+}
+
+if (els.waterBtn) {
+  els.waterBtn.addEventListener("click", async () => {
+    await logPoints("water", 5, null);
+  });
+}
+
+// ---------- PHASE 5: T-SHIRT SIZE ----------
+async function renderMyDetails() {
+  if (els.tshirtSelect) els.tshirtSelect.value = currentPlayer.tshirt_size || "";
+}
+
+if (els.tshirtForm) {
+  els.tshirtForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const size = els.tshirtSelect.value;
+    if (!size) return;
+    await sb.from("players").update({ tshirt_size: size }).eq("id", currentPlayer.id);
+    currentPlayer.tshirt_size = size;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(currentPlayer));
+  });
+}
+
+// ---------- PHASE 5: BEACH VOTE ----------
+async function renderBeachVote() {
+  const { data: options } = await sb.from("beach_options").select("*").order("created_at");
+  const { data: votes } = await sb.from("beach_votes").select("beach_id, player_id");
+
+  const counts = {};
+  (votes || []).forEach((v) => (counts[v.beach_id] = (counts[v.beach_id] || 0) + 1));
+  const myVote = (votes || []).find((v) => v.player_id === currentPlayer.id);
+
+  if (!options || options.length === 0) {
+    els.beachVoteList.innerHTML = `<p class="card__sub">No beach options yet — ask your admin to add some.</p>`;
+    return;
+  }
+
+  els.beachVoteList.innerHTML = options
+    .map(
+      (o) => `
+      <div class="beach-option ${myVote && myVote.beach_id === o.id ? "is-selected" : ""}" data-beach-id="${o.id}">
+        <span>${escapeHtml(o.name)}</span>
+        <span class="roster-row__tag">${counts[o.id] || 0} vote${(counts[o.id] || 0) === 1 ? "" : "s"}</span>
+      </div>`
+    )
+    .join("");
+
+  document.querySelectorAll(".beach-option").forEach((el) => {
+    el.addEventListener("click", async () => {
+      await sb.from("beach_votes").upsert({ player_id: currentPlayer.id, beach_id: el.dataset.beachId }, { onConflict: "player_id" });
+      await renderBeachVote();
+    });
+  });
+}
+
+// ---------- PHASE 5: SCHEDULE (countdowns + timetable, public view) ----------
+let countdownTickHandle = null;
+
+async function renderSchedule() {
+  const { data: countdowns } = await sb.from("countdowns").select("*").order("target_time");
+  els.countdownsList.innerHTML = (countdowns && countdowns.length)
+    ? countdowns
+        .map((c) => `<div class="countdown-item" data-target="${c.target_time}"><div class="countdown-item__title">${escapeHtml(c.title)}</div><div class="countdown-item__time">—</div></div>`)
+        .join("")
+    : `<p class="card__sub">No countdowns set yet.</p>`;
+
+  const { data: items } = await sb.from("timetable_items").select("*").order("sort_order").order("created_at");
+  els.timetableList.innerHTML = (items && items.length)
+    ? items.map((i) => `<div class="timetable-item"><span class="timetable-item__time">${escapeHtml(i.time_label)}</span><span>${escapeHtml(i.title)}</span></div>`).join("")
+    : `<p class="card__sub">No timetable items yet.</p>`;
+
+  tickCountdowns();
+  if (!countdownTickHandle) {
+    countdownTickHandle = setInterval(tickCountdowns, 1000);
+  }
+}
+
+function tickCountdowns() {
+  document.querySelectorAll("#countdowns-list .countdown-item").forEach((el) => {
+    const target = new Date(el.dataset.target).getTime();
+    const diff = target - Date.now();
+    const timeEl = el.querySelector(".countdown-item__time");
+    if (diff <= 0) {
+      timeEl.textContent = "Now!";
+      return;
+    }
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    timeEl.textContent = `${h}h ${m}m ${s}s`;
+  });
+}
+
+// ---------- PHASE 5: ADMIN — COUNTDOWNS ----------
+async function renderAdminCountdowns() {
+  if (!els.adminCountdownsList) return;
+  const { data } = await sb.from("countdowns").select("*").order("target_time");
+  els.adminCountdownsList.innerHTML = (data || [])
+    .map(
+      (c) => `<div class="roster-row"><span>${escapeHtml(c.title)} — ${new Date(c.target_time).toLocaleString()}</span><button class="btn btn--secondary delete-countdown-btn" data-id="${c.id}" style="padding:6px 12px;font-size:12px;">Delete</button></div>`
+    )
+    .join("");
+  document.querySelectorAll(".delete-countdown-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await sb.from("countdowns").delete().eq("id", btn.dataset.id);
+      await renderAdminCountdowns();
+      await renderSchedule();
+    })
+  );
+}
+
+if (els.addCountdownForm) {
+  els.addCountdownForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const title = els.newCountdownTitle.value.trim();
+    const targetLocal = els.newCountdownTime.value;
+    if (!title || !targetLocal) return;
+    await sb.from("countdowns").insert({ title, target_time: new Date(targetLocal).toISOString() });
+    e.target.reset();
+    await renderAdminCountdowns();
+    await renderSchedule();
+  });
+}
+
+// ---------- PHASE 5: ADMIN — TIMETABLE ----------
+async function renderAdminTimetable() {
+  if (!els.adminTimetableList) return;
+  const { data } = await sb.from("timetable_items").select("*").order("sort_order").order("created_at");
+  els.adminTimetableList.innerHTML = (data || [])
+    .map(
+      (i) => `<div class="roster-row"><span>${escapeHtml(i.time_label)} — ${escapeHtml(i.title)}</span><button class="btn btn--secondary delete-timetable-btn" data-id="${i.id}" style="padding:6px 12px;font-size:12px;">Delete</button></div>`
+    )
+    .join("");
+  document.querySelectorAll(".delete-timetable-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await sb.from("timetable_items").delete().eq("id", btn.dataset.id);
+      await renderAdminTimetable();
+      await renderSchedule();
+    })
+  );
+}
+
+if (els.addTimetableForm) {
+  els.addTimetableForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const time_label = els.newTimetableTime.value.trim();
+    const title = els.newTimetableTitle.value.trim();
+    if (!time_label || !title) return;
+    await sb.from("timetable_items").insert({ time_label, title });
+    e.target.reset();
+    await renderAdminTimetable();
+    await renderSchedule();
+  });
+}
+
+// ---------- PHASE 5: ADMIN — BEACH OPTIONS ----------
+async function renderAdminBeachOptions() {
+  if (!els.adminBeachList) return;
+  const { data } = await sb.from("beach_options").select("*").order("created_at");
+  els.adminBeachList.innerHTML = (data || [])
+    .map(
+      (b) => `<div class="roster-row"><span>${escapeHtml(b.name)}</span><button class="btn btn--secondary delete-beach-btn" data-id="${b.id}" style="padding:6px 12px;font-size:12px;">Delete</button></div>`
+    )
+    .join("");
+  document.querySelectorAll(".delete-beach-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await sb.from("beach_options").delete().eq("id", btn.dataset.id);
+      await renderAdminBeachOptions();
+      await renderBeachVote();
+    })
+  );
+}
+
+if (els.addBeachForm) {
+  els.addBeachForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = els.newBeachName.value.trim();
+    if (!name) return;
+    await sb.from("beach_options").insert({ name });
+    e.target.reset();
+    await renderAdminBeachOptions();
+    await renderBeachVote();
+  });
 }
