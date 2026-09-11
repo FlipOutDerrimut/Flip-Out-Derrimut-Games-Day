@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="css/style.css?v=2" />
+<link rel="stylesheet" href="css/style.css?v=3" />
 </head>
 <body>
 
@@ -25,7 +25,7 @@
     <p class="login-card__eyebrow">Never Stop Creating Fun</p>
     <h1 class="login-card__title">Games Day</h1>
 
-    <form id="login-form" class="login-form">
+    <form id="login-form" class="login-form" onsubmit="event.preventDefault();">
       <label class="field">
         <span>Your name</span>
         <input type="text" id="login-name" autocomplete="off" required />
@@ -124,7 +124,23 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=2"></script>
-<script src="js/app.js?v=2"></script>
+<script src="js/config.js?v=3"></script>
+<script src="js/app.js?v=3"></script>
+<script>
+  window.addEventListener("load", function () {
+    var diag = document.createElement("div");
+    diag.id = "boot-diagnostic";
+    diag.style.cssText =
+      "position:fixed;bottom:10px;left:10px;right:10px;background:#111;color:#7CFC00;" +
+      "font-family:monospace;font-size:11px;line-height:1.6;padding:10px;border-radius:8px;" +
+      "z-index:99999;white-space:pre-wrap;";
+    diag.textContent =
+      "Supabase library: " + (window.supabase ? "OK" : "MISSING") + "\n" +
+      "config.js loaded: " + (typeof SUPABASE_URL !== "undefined" ? "OK (" + SUPABASE_URL + ")" : "MISSING") + "\n" +
+      "app.js ran: " + (window.__appJsRan ? "OK" : "MISSING — this is the problem") + "\n" +
+      "login form found: " + (document.getElementById("login-form") ? "OK" : "MISSING");
+    document.body.appendChild(diag);
+  });
+</script>
 </body>
 </html>
