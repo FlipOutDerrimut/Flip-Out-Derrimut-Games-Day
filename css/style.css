@@ -284,6 +284,65 @@ html, body {
 .cheer-item:last-child { border-bottom: none; }
 .cheer-item__meta { color: #6B6B6B; font-size: 12px; margin-top: 2px; }
 
+/* ===== PHASE 4/5: WELLBEING & SCHEDULE ===== */
+.weather-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.weather-row__temp {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+}
+.weather-tip {
+  font-size: 13px;
+  color: var(--fo-purple);
+  background: rgba(141,45,211,0.08);
+  padding: 8px 12px;
+  border-radius: 10px;
+  margin-top: 8px;
+}
+.reminder-banner {
+  background: var(--fo-pink);
+  color: var(--fo-velvet);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.countdown-item { padding: 10px 0; border-bottom: 1px solid var(--fo-grey); }
+.countdown-item:last-child { border-bottom: none; }
+.countdown-item__title { font-weight: 700; font-size: 14px; }
+.countdown-item__time {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--fo-pink);
+  margin-top: 2px;
+}
+.timetable-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--fo-grey);
+  font-size: 14px;
+}
+.timetable-item:last-child { border-bottom: none; }
+.timetable-item__time { font-weight: 700; color: var(--fo-purple); flex-shrink: 0; width: 70px; }
+.beach-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--fo-grey);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.beach-option.is-selected { background: rgba(153,198,62,0.2); border: 1px solid var(--fo-green); }
+
 /* ===== TAB BAR ===== */
 .tab-bar {
   position: fixed;
@@ -292,17 +351,21 @@ html, body {
   background: var(--fo-velvet);
   padding: 10px 10px calc(10px + var(--safe-bottom));
   gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .tab-btn {
-  flex: 1;
+  flex: 0 0 auto;
+  min-width: 76px;
   background: none;
   border: none;
   color: #8A7DA0;
   font-family: var(--font-body);
   font-weight: 700;
-  font-size: 13px;
-  padding: 10px 0;
+  font-size: 12px;
+  padding: 10px 12px;
   border-radius: 10px;
   cursor: pointer;
+  white-space: nowrap;
 }
 .tab-btn.is-active { color: var(--fo-velvet); background: var(--fo-green); }
