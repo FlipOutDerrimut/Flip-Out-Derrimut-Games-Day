@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="css/style.css?v=7" />
+<link rel="stylesheet" href="css/style.css?v=9" />
 </head>
 <body>
 
@@ -57,6 +57,14 @@
     <!-- HOME -->
     <section id="view-home" class="view">
       <h2 class="view-title">Home</h2>
+
+      <div class="card party-countdown-card">
+        <p class="card__eyebrow">🎄 Flip Out Christmas Party</p>
+        <div class="party-countdown js-countdown" data-target="">
+          <div class="party-countdown__time">—</div>
+        </div>
+      </div>
+
       <div class="card">
         <p class="card__eyebrow">You're in</p>
         <p id="home-welcome" class="card__big">Welcome!</p>
@@ -82,11 +90,6 @@
           </label>
           <button type="submit" class="btn btn--secondary btn--block">Save size</button>
         </form>
-      </div>
-
-      <div class="card">
-        <h3 class="card__heading">Beach vote 🏖️</h3>
-        <div id="beach-vote-list" class="stack"></div>
       </div>
     </section>
 
@@ -165,6 +168,30 @@
       </div>
     </section>
 
+    <!-- BEACH VOTE -->
+    <section id="view-beach" class="view" hidden>
+      <h2 class="view-title">Beach Vote 🏖️</h2>
+
+      <div class="card">
+        <h3 class="card__heading">Suggest a beach</h3>
+        <form id="add-beach-form" class="stack-form" autocomplete="off">
+          <label class="field">
+            <span>Search for a beach</span>
+            <input type="text" id="beach-search-input" placeholder="Start typing a beach name…" required />
+          </label>
+          <div id="beach-search-results" class="stack"></div>
+          <p id="beach-search-hint" class="card__sub">Search and tap a result to select it before adding.</p>
+          <button type="submit" class="btn btn--primary btn--block" id="add-beach-submit" disabled>Add this beach</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3 class="card__heading">Vote for a beach</h3>
+        <div id="beach-vote-list" class="stack"></div>
+        <p id="winning-beach-note" class="weather-tip" hidden></p>
+      </div>
+    </section>
+
     <!-- SCHEDULE: timetable + countdowns -->
     <section id="view-schedule" class="view" hidden>
       <h2 class="view-title">Schedule</h2>
@@ -181,6 +208,17 @@
     </section>
     <section id="view-admin" class="view" hidden>
       <h2 class="view-title">Admin</h2>
+
+      <div class="card">
+        <h3 class="card__heading">Christmas Party date</h3>
+        <form id="event-date-form" class="stack-form">
+          <label class="field">
+            <span>Party date &amp; time</span>
+            <input type="datetime-local" id="event-date-input" required />
+          </label>
+          <button type="submit" class="btn btn--secondary btn--block">Save party date</button>
+        </form>
+      </div>
 
       <div class="card">
         <h3 class="card__heading">Daily awards (admin only)</h3>
@@ -241,15 +279,8 @@
       </div>
 
       <div class="card">
-        <h3 class="card__heading">Beach vote options</h3>
-        <form id="add-beach-form" class="stack-form">
-          <label class="field">
-            <span>Beach name</span>
-            <input type="text" id="new-beach-name" required />
-          </label>
-          <button type="submit" class="btn btn--secondary btn--block">Add beach option</button>
-        </form>
-        <div id="admin-beach-list" class="stack" style="margin-top:12px;"></div>
+        <h3 class="card__heading">Manage beach options</h3>
+        <div id="admin-beach-list" class="stack"></div>
       </div>
 
       <div class="card">
@@ -291,18 +322,27 @@
   </main>
 
   <nav class="tab-bar">
-    <button class="tab-btn is-active" data-view="home">Home</button>
-    <button class="tab-btn" data-view="teams">Teams</button>
-    <button class="tab-btn" data-view="cheers">Cheers</button>
-    <button class="tab-btn" data-view="wellbeing">Wellbeing</button>
-    <button class="tab-btn" data-view="schedule">Schedule</button>
-    <button class="tab-btn" data-view="admin" id="admin-tab" hidden>Admin</button>
+    <button class="tab-btn is-active" data-view="home"><span class="tab-btn__icon">🏠</span>Home</button>
+    <button class="tab-btn" data-view="teams"><span class="tab-btn__icon">🧑‍🤝‍🧑</span>Teams</button>
+    <button class="tab-btn" data-view="cheers"><span class="tab-btn__icon">🎉</span>Cheers</button>
+    <button class="tab-btn" data-view="wellbeing"><span class="tab-btn__icon">☀️</span>Wellbeing</button>
+    <button class="tab-btn" data-view="beach"><span class="tab-btn__icon">🏖️</span>Beach</button>
+    <button class="tab-btn" data-view="schedule"><span class="tab-btn__icon">📅</span>Schedule</button>
+    <button class="tab-btn" data-view="admin" id="admin-tab" hidden><span class="tab-btn__icon">⚙️</span>Admin</button>
   </nav>
 
 </div>
 
+<!-- PLAYER PROFILE MODAL -->
+<div id="player-profile-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <button id="player-profile-close" class="modal-close">✕</button>
+    <div id="player-profile-content">Loading…</div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/config.js?v=9"></script>
+<script src="js/app.js?v=9"></script>
 </body>
 </html>
