@@ -85,8 +85,17 @@ const els = {
   newTimetableTitle: document.getElementById("new-timetable-title"),
   adminTimetableList: document.getElementById("admin-timetable-list"),
   addBeachForm: document.getElementById("add-beach-form"),
-  newBeachName: document.getElementById("new-beach-name"),
+  beachSearchInput: document.getElementById("beach-search-input"),
+  beachSearchResults: document.getElementById("beach-search-results"),
+  beachSearchHint: document.getElementById("beach-search-hint"),
+  addBeachSubmit: document.getElementById("add-beach-submit"),
+  winningBeachNote: document.getElementById("winning-beach-note"),
   adminBeachList: document.getElementById("admin-beach-list"),
+  eventDateForm: document.getElementById("event-date-form"),
+  eventDateInput: document.getElementById("event-date-input"),
+  playerProfileModal: document.getElementById("player-profile-modal"),
+  playerProfileContent: document.getElementById("player-profile-content"),
+  playerProfileClose: document.getElementById("player-profile-close"),
 };
 
 let currentPlayer = null;
@@ -134,6 +143,7 @@ if (els.logoutBtn) {
     currentPlayer = null;
     els.loginName.value = "";
     els.loginPin.value = "";
+    els.adminTab.hidden = true; // reset so the next login on this device can't inherit admin access
     showAppShell(false);
   });
 }
@@ -182,6 +192,7 @@ async function enterApp() {
   els.headerName.textContent = currentPlayer.name;
   els.homeWelcome.textContent = `Hey ${currentPlayer.name.split(" ")[0]}!`;
 
+  els.adminTab.hidden = true; // always start hidden; only unhidden below if this login is actually an admin
   if (currentPlayer.is_admin) {
     els.adminTab.hidden = false;
     await loadAdminData();
@@ -191,8 +202,10 @@ async function enterApp() {
     await renderAdminCountdowns();
     await renderAdminTimetable();
     await renderAdminBeachOptions();
+    await loadEventDateIntoAdminForm();
   }
 
+  await loadEventSettings();
   await renderMyTeam();
   await loadTeamsList();
   await renderTeamLeaderboard();
@@ -220,6 +233,61 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str == null ? "" : String(str);
   return div.innerHTML;
+}
+
+// ---------- PHASE 6: PLAYER PROFILE / STATS MODAL ----------
+function wireClickableNames(container) {
+  container.querySelectorAll(".clickable-name").forEach((el) => {
+    el.addEventListener("click", () => showPlayerProfile(el.dataset.playerId));
+  });
+}
+
+async function showPlayerProfile(playerId) {
+  els.playerProfileContent.innerHTML = "Loading…";
+  els.playerProfileModal.hidden = false;
+
+  const { data: player } = await sb.from("players").select("*").eq("id", playerId).maybeSingle();
+  if (!player) {
+    els.playerProfileContent.innerHTML = `<p class="card__sub">Couldn't find that player.</p>`;
+    return;
+  }
+
+  let teamName = "No team";
+  if (player.team_id) {
+    const { data: team } = await sb.from("teams").select("name").eq("id", player.team_id).maybeSingle();
+    if (team) teamName = team.name;
+  }
+
+  const [{ data: myPoints }, { data: cheersSent }, { data: cheersReceived }] = await Promise.all([
+    sb.from("points_log").select("points, reason").eq("player_id", playerId),
+    sb.from("cheers").select("id").eq("from_player_id", playerId),
+    sb.from("cheers").select("id").eq("player_id", playerId),
+  ]);
+
+  const totalPoints = (myPoints || []).reduce((sum, p) => sum + p.points, 0);
+  const sunscreenCount = (myPoints || []).filter((p) => p.reason === "sunscreen").length;
+  const waterCount = (myPoints || []).filter((p) => p.reason === "water").length;
+
+  els.playerProfileContent.innerHTML = `
+    <h3 class="team-header__name">${escapeHtml(player.name)}</h3>
+    <p class="card__sub">${escapeHtml(teamName)}${player.player_number != null ? ` · #${player.player_number}` : ""}</p>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="stat-box__num">${totalPoints}</div><div class="stat-box__label">Points earned</div></div>
+      <div class="stat-box"><div class="stat-box__num">${(cheersReceived || []).length}</div><div class="stat-box__label">Cheers received</div></div>
+      <div class="stat-box"><div class="stat-box__num">${(cheersSent || []).length}</div><div class="stat-box__label">Cheers sent</div></div>
+      <div class="stat-box"><div class="stat-box__num">${sunscreenCount}</div><div class="stat-box__label">Sunscreen logs</div></div>
+      <div class="stat-box"><div class="stat-box__num">${waterCount}</div><div class="stat-box__label">Water logs</div></div>
+      <div class="stat-box"><div class="stat-box__num">${player.tshirt_size || "—"}</div><div class="stat-box__label">T-shirt size</div></div>
+    </div>`;
+}
+
+if (els.playerProfileClose) {
+  els.playerProfileClose.addEventListener("click", () => (els.playerProfileModal.hidden = true));
+}
+if (els.playerProfileModal) {
+  els.playerProfileModal.addEventListener("click", (e) => {
+    if (e.target === els.playerProfileModal) els.playerProfileModal.hidden = true;
+  });
 }
 
 // ---------- MY TEAM (Home tab) ----------
@@ -299,14 +367,14 @@ async function renderMyTeam() {
   } else if (team.leader_id === currentPlayer.id) {
     leaderSectionHtml = `<p class="card__sub" style="margin-top:12px;">You're the team leader <span class="leader-star">★</span></p>`;
   } else if (leader) {
-    leaderSectionHtml = `<p class="card__sub" style="margin-top:12px;">Team leader: ${escapeHtml(leader.name)} <span class="leader-star">★</span></p>`;
+    leaderSectionHtml = `<p class="card__sub" style="margin-top:12px;">Team leader: <span class="clickable-name" data-player-id="${leader.id}">${escapeHtml(leader.name)}</span> <span class="leader-star">★</span></p>`;
   }
 
   const rosterHtml = (members || [])
     .map(
       (m) => `
       <div class="member-row">
-        <span>${m.player_number != null ? `<span class="member-row__number">${m.player_number}</span>` : ""}${escapeHtml(m.name)}${m.id === team.leader_id ? '<span class="leader-star">★</span>' : ""}</span>
+        <span>${m.player_number != null ? `<span class="member-row__number">${m.player_number}</span>` : ""}<span class="clickable-name" data-player-id="${m.id}">${escapeHtml(m.name)}</span>${m.id === team.leader_id ? '<span class="leader-star">★</span>' : ""}</span>
       </div>`
     )
     .join("");
@@ -327,6 +395,8 @@ async function renderMyTeam() {
       <h3 class="card__heading">Team roster</h3>
       <div class="stack">${rosterHtml || `<p class="card__sub">No members yet.</p>`}</div>
     </div>`;
+
+  wireClickableNames(els.myTeamSection);
 
   const numberForm = document.getElementById("pick-number-form");
   if (numberForm) {
@@ -446,12 +516,36 @@ async function loadTeamsList() {
   }
 
   for (const team of data) {
-    const { count } = await sb.from("players").select("*", { count: "exact", head: true }).eq("team_id", team.id);
-    const row = document.createElement("div");
-    row.className = "roster-row";
-    row.innerHTML = `<span>${escapeHtml(team.name)}</span><span class="roster-row__tag">${count || 0} member${count === 1 ? "" : "s"}</span>`;
-    els.teamsList.appendChild(row);
+    const { data: members, count } = await sb
+      .from("players")
+      .select("id, name, player_number", { count: "exact" })
+      .eq("team_id", team.id)
+      .order("player_number", { ascending: true, nullsFirst: false });
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "card";
+    wrapper.innerHTML = `
+      <div class="roster-row" style="cursor:pointer;" data-toggle-team="${team.id}">
+        <span>${escapeHtml(team.name)}</span>
+        <span class="roster-row__tag">${count || 0} member${count === 1 ? "" : "s"}</span>
+      </div>
+      <div class="team-roster-expand" id="team-roster-${team.id}" hidden>
+        ${(members || [])
+          .map(
+            (m) => `<div class="member-row">${m.player_number != null ? `<span class="member-row__number">${m.player_number}</span>` : ""}<span class="clickable-name" data-player-id="${m.id}">${escapeHtml(m.name)}</span></div>`
+          )
+          .join("") || `<p class="card__sub">No members yet.</p>`}
+      </div>`;
+    els.teamsList.appendChild(wrapper);
   }
+
+  document.querySelectorAll("[data-toggle-team]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const panel = document.getElementById(`team-roster-${row.dataset.toggleTeam}`);
+      panel.hidden = !panel.hidden;
+    });
+  });
+  wireClickableNames(els.teamsList);
 }
 
 // ---------- ADMIN: PENDING TEAM APPROVALS ----------
@@ -508,9 +602,10 @@ async function loadAdminData() {
   (players || []).forEach((p) => {
     const row = document.createElement("div");
     row.className = "roster-row";
-    row.innerHTML = `<span>${escapeHtml(p.name)}${p.is_admin ? " (admin)" : ""}</span><span class="roster-row__tag">PIN ${escapeHtml(p.pin)}</span>`;
+    row.innerHTML = `<span class="clickable-name" data-player-id="${p.id}">${escapeHtml(p.name)}</span>${p.is_admin ? " (admin)" : ""}<span class="roster-row__tag">PIN ${escapeHtml(p.pin)}</span>`;
     els.adminPlayerList.appendChild(row);
   });
+  wireClickableNames(els.adminPlayerList);
 }
 
 if (els.addPlayerForm) {
@@ -547,13 +642,24 @@ if (els.addTeamForm) {
 }
 
 // ---------- PHASE 3: TEAM LEADERBOARD ----------
+let partyDateMs = null;
+
+async function loadEventSettings() {
+  const { data } = await sb.from("event_settings").select("party_date").eq("id", 1).maybeSingle();
+  if (data) partyDateMs = new Date(data.party_date).getTime();
+  renderPartyCountdownBanner();
+}
+
 async function renderTeamLeaderboard() {
   const { data: teams } = await sb.from("teams").select("id, name").eq("status", "approved");
-  const { data: allPoints } = await sb.from("points_log").select("team_id, points");
+  const { data: allPoints } = await sb.from("points_log").select("team_id, points, reason");
+
+  const eventHasStarted = partyDateMs != null && Date.now() >= partyDateMs;
 
   const totals = {};
   (allPoints || []).forEach((p) => {
     if (!p.team_id) return;
+    if (!eventHasStarted && p.reason !== "cheer") return; // sunscreen/water don't count until party day
     totals[p.team_id] = (totals[p.team_id] || 0) + p.points;
   });
 
@@ -561,18 +667,23 @@ async function renderTeamLeaderboard() {
     .map((t) => ({ name: t.name, score: totals[t.id] || 0 }))
     .sort((a, b) => b.score - a.score);
 
-  els.teamLeaderboard.innerHTML = ranked.length
-    ? ranked
-        .map(
-          (t, i) => `
+  const noteHtml = eventHasStarted
+    ? ""
+    : `<p class="card__sub" style="margin-top:10px;">Cheers count now — sunscreen &amp; water points start counting on party day, keep logging so it's ready to go!</p>`;
+
+  els.teamLeaderboard.innerHTML =
+    (ranked.length
+      ? ranked
+          .map(
+            (t, i) => `
       <div class="rank-row">
         <span class="rank-row__place">${i + 1}</span>
         <span class="rank-row__name">${escapeHtml(t.name)}</span>
         <span class="rank-row__score">${t.score} pts</span>
       </div>`
-        )
-        .join("")
-    : `<p class="card__sub">No approved teams yet.</p>`;
+          )
+          .join("")
+      : `<p class="card__sub">No approved teams yet.</p>`) + noteHtml;
 }
 
 // ---------- PHASE 3: SEND A CHEER ----------
@@ -743,9 +854,9 @@ async function renderAwardsTally() {
 }
 
 // ---------- PHASE 4: WEATHER & SUNSCREEN TIP ----------
-// Derrimut, VIC coordinates — change these if your venue is elsewhere.
-const VENUE_LAT = -37.7838;
-const VENUE_LON = 144.7502;
+// Derrimut, VIC coordinates — overridden automatically by the winning beach vote if one is set.
+let VENUE_LAT = -37.7838;
+let VENUE_LON = 144.7502;
 let lastKnownUvIndex = null;
 
 async function renderWeather() {
@@ -878,7 +989,7 @@ if (els.tshirtForm) {
   });
 }
 
-// ---------- PHASE 5: BEACH VOTE ----------
+// ---------- PHASE 5/6: BEACH VOTE ----------
 async function renderBeachVote() {
   const { data: options } = await sb.from("beach_options").select("*").order("created_at");
   const { data: votes } = await sb.from("beach_votes").select("beach_id, player_id");
@@ -888,7 +999,8 @@ async function renderBeachVote() {
   const myVote = (votes || []).find((v) => v.player_id === currentPlayer.id);
 
   if (!options || options.length === 0) {
-    els.beachVoteList.innerHTML = `<p class="card__sub">No beach options yet — ask your admin to add some.</p>`;
+    els.beachVoteList.innerHTML = `<p class="card__sub">No beach options yet — search above to suggest one!</p>`;
+    els.winningBeachNote.hidden = true;
     return;
   }
 
@@ -907,6 +1019,102 @@ async function renderBeachVote() {
       await sb.from("beach_votes").upsert({ player_id: currentPlayer.id, beach_id: el.dataset.beachId }, { onConflict: "player_id" });
       await renderBeachVote();
     });
+  });
+
+  // Winning beach (most votes) drives the Wellbeing weather location, if it has coordinates.
+  let winner = null;
+  let bestCount = 0;
+  options.forEach((o) => {
+    const c = counts[o.id] || 0;
+    if (c > bestCount) {
+      bestCount = c;
+      winner = o;
+    }
+  });
+
+  if (winner && bestCount > 0 && winner.lat != null && winner.lng != null) {
+    VENUE_LAT = winner.lat;
+    VENUE_LON = winner.lng;
+    els.winningBeachNote.hidden = false;
+    els.winningBeachNote.textContent = `🏆 ${winner.name} is winning — the Wellbeing tab's weather now uses this location.`;
+    await renderWeather();
+  } else {
+    els.winningBeachNote.hidden = true;
+  }
+}
+
+// ---------- PHASE 6: BEACH SEARCH (free OpenStreetMap/Nominatim lookup — no API key, no cost) ----------
+let selectedBeachResult = null;
+let beachSearchDebounce = null;
+
+if (els.beachSearchInput) {
+  els.beachSearchInput.addEventListener("input", () => {
+    selectedBeachResult = null;
+    els.addBeachSubmit.disabled = true;
+    clearTimeout(beachSearchDebounce);
+    const query = els.beachSearchInput.value.trim();
+    if (query.length < 3) {
+      els.beachSearchResults.innerHTML = "";
+      return;
+    }
+    beachSearchDebounce = setTimeout(() => searchBeaches(query), 600);
+  });
+}
+
+async function searchBeaches(query) {
+  els.beachSearchHint.textContent = "Searching…";
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(query + " beach")}`;
+    const res = await fetch(url);
+    const results = await res.json();
+
+    if (!results.length) {
+      els.beachSearchResults.innerHTML = "";
+      els.beachSearchHint.textContent = "No matches — try a different spelling or add the suburb/state.";
+      return;
+    }
+
+    els.beachSearchHint.textContent = "Tap the correct beach:";
+    els.beachSearchResults.innerHTML = results
+      .map(
+        (r, i) => `<div class="beach-result" data-index="${i}">${escapeHtml(r.display_name)}</div>`
+      )
+      .join("");
+
+    document.querySelectorAll(".beach-result").forEach((el, i) => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll(".beach-result").forEach((r) => r.classList.remove("is-selected"));
+        el.classList.add("is-selected");
+        selectedBeachResult = results[i];
+        els.addBeachSubmit.disabled = false;
+        els.beachSearchHint.textContent = "Selected — tap \"Add this beach\" below.";
+      });
+    });
+  } catch (e) {
+    els.beachSearchHint.textContent = "Couldn't search right now — check your connection and try again.";
+  }
+}
+
+if (els.addBeachForm) {
+  els.addBeachForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!selectedBeachResult) return;
+
+    const shortName = els.beachSearchInput.value.trim();
+    await sb.from("beach_options").insert({
+      name: shortName,
+      lat: parseFloat(selectedBeachResult.lat),
+      lng: parseFloat(selectedBeachResult.lon),
+    });
+
+    els.beachSearchInput.value = "";
+    els.beachSearchResults.innerHTML = "";
+    els.beachSearchHint.textContent = "Search and tap a result to select it before adding.";
+    els.addBeachSubmit.disabled = true;
+    selectedBeachResult = null;
+
+    await renderBeachVote();
+    if (currentPlayer.is_admin) await renderAdminBeachOptions();
   });
 }
 
@@ -945,6 +1153,56 @@ function tickCountdowns() {
     const m = Math.floor((diff % 3600000) / 60000);
     const s = Math.floor((diff % 60000) / 1000);
     timeEl.textContent = `${h}h ${m}m ${s}s`;
+  });
+
+  const partyEl = document.querySelector(".party-countdown");
+  if (partyEl && partyEl.dataset.target) {
+    const diff = new Date(partyEl.dataset.target).getTime() - Date.now();
+    const timeEl = partyEl.querySelector(".party-countdown__time");
+    if (diff <= 0) {
+      timeEl.textContent = "It's party time! 🎉";
+    } else {
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      timeEl.textContent = `${d}d ${h}h ${m}m ${s}s`;
+    }
+  }
+}
+
+// ---------- EVENT SETTINGS: PARTY COUNTDOWN + ADMIN CONTROL ----------
+function renderPartyCountdownBanner() {
+  const partyEl = document.querySelector(".party-countdown");
+  if (partyEl && partyDateMs != null) {
+    partyEl.dataset.target = new Date(partyDateMs).toISOString();
+  }
+  tickCountdowns();
+  if (!countdownTickHandle) {
+    countdownTickHandle = setInterval(tickCountdowns, 1000);
+  }
+}
+
+async function loadEventDateIntoAdminForm() {
+  if (!els.eventDateInput) return;
+  const { data } = await sb.from("event_settings").select("party_date").eq("id", 1).maybeSingle();
+  if (data) {
+    const local = new Date(data.party_date);
+    local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
+    els.eventDateInput.value = local.toISOString().slice(0, 16);
+  }
+}
+
+if (els.eventDateForm) {
+  els.eventDateForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const value = els.eventDateInput.value;
+    if (!value) return;
+    await sb.from("event_settings").update({ party_date: new Date(value).toISOString() }).eq("id", 1);
+    await loadEventSettings();
+    renderPartyCountdownBanner();
+    await renderTeamLeaderboard();
+    alert("Party date updated!");
   });
 }
 
@@ -1010,7 +1268,7 @@ if (els.addTimetableForm) {
   });
 }
 
-// ---------- PHASE 5: ADMIN — BEACH OPTIONS ----------
+// ---------- PHASE 5: ADMIN — BEACH OPTIONS (management/delete only — adding happens on the public Beach tab) ----------
 async function renderAdminBeachOptions() {
   if (!els.adminBeachList) return;
   const { data } = await sb.from("beach_options").select("*").order("created_at");
@@ -1026,16 +1284,4 @@ async function renderAdminBeachOptions() {
       await renderBeachVote();
     })
   );
-}
-
-if (els.addBeachForm) {
-  els.addBeachForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = els.newBeachName.value.trim();
-    if (!name) return;
-    await sb.from("beach_options").insert({ name });
-    e.target.reset();
-    await renderAdminBeachOptions();
-    await renderBeachVote();
-  });
 }
