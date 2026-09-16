@@ -116,20 +116,16 @@ if (els.loginForm) {
     const pin = els.loginPin.value.trim();
     if (!name || !pin) return;
 
-    const { data, error } = await sb
-      .from("players")
-      .select("*")
-      .ilike("name", name)
-      .eq("pin", pin)
-      .maybeSingle();
+    const { data, error } = await sb.rpc("login_player", { p_name: name, p_pin: pin });
+    const player = data && data[0];
 
-    if (error || !data) {
+    if (error || !player) {
       els.loginError.textContent = "No match for that name + PIN. Check with your admin.";
       els.loginError.hidden = false;
       return;
     }
 
-    currentPlayer = data;
+    currentPlayer = player;
     localStorage.setItem(SESSION_KEY, JSON.stringify(currentPlayer));
     await enterApp();
   });
@@ -222,9 +218,13 @@ async function enterApp() {
 // Re-fetch this player's own row (their team_id / player_number may have
 // changed) and keep localStorage in sync.
 async function refreshCurrentPlayer() {
-  const { data } = await sb.from("players").select("*").eq("id", currentPlayer.id).maybeSingle();
+  const { data } = await sb
+    .from("players")
+    .select("id, name, team_id, player_number, tshirt_size, is_admin, created_at")
+    .eq("id", currentPlayer.id)
+    .maybeSingle();
   if (data) {
-    currentPlayer = data;
+    currentPlayer = { ...data, pin: currentPlayer.pin }; // pin isn't readable via a normal select anymore — keep the one captured at login
     localStorage.setItem(SESSION_KEY, JSON.stringify(currentPlayer));
   }
 }
@@ -246,7 +246,11 @@ async function showPlayerProfile(playerId) {
   els.playerProfileContent.innerHTML = "Loading…";
   els.playerProfileModal.hidden = false;
 
-  const { data: player } = await sb.from("players").select("*").eq("id", playerId).maybeSingle();
+  const { data: player } = await sb
+    .from("players")
+    .select("id, name, team_id, player_number, tshirt_size, is_admin, created_at")
+    .eq("id", playerId)
+    .maybeSingle();
   if (!player) {
     els.playerProfileContent.innerHTML = `<p class="card__sub">Couldn't find that player.</p>`;
     return;
@@ -342,7 +346,7 @@ async function renderMyTeam() {
   // approved
   const { data: members } = await sb
     .from("players")
-    .select("*")
+    .select("id, name, team_id, player_number, tshirt_size, is_admin")
     .eq("team_id", team.id)
     .order("player_number", { ascending: true, nullsFirst: false });
 
@@ -482,7 +486,7 @@ async function renderNoTeamState() {
 
     const { data: newTeam, error } = await sb
       .from("teams")
-      .insert({ name, logo_url: logoUrl, status: "pending" })
+      .insert({ name, logo_url: logoUrl })
       .select()
       .single();
     if (error) {
@@ -573,14 +577,16 @@ async function loadPendingTeams() {
 
   document.querySelectorAll(".approve-team-btn").forEach((btn) =>
     btn.addEventListener("click", async () => {
-      await sb.from("teams").update({ status: "approved" }).eq("id", btn.dataset.id);
+      const { error } = await sb.rpc("admin_set_team_status", { p_team_id: btn.dataset.id, p_status: "approved", p_admin_pin: currentPlayer.pin });
+      if (error) { alert("Couldn't approve team: " + error.message); return; }
       await loadPendingTeams();
       await loadTeamsList();
     })
   );
   document.querySelectorAll(".reject-team-btn").forEach((btn) =>
     btn.addEventListener("click", async () => {
-      await sb.from("teams").update({ status: "rejected" }).eq("id", btn.dataset.id);
+      const { error } = await sb.rpc("admin_set_team_status", { p_team_id: btn.dataset.id, p_status: "rejected", p_admin_pin: currentPlayer.pin });
+      if (error) { alert("Couldn't reject team: " + error.message); return; }
       await loadPendingTeams();
     })
   );
@@ -597,15 +603,55 @@ async function loadAdminData() {
     els.newPlayerTeamSelect.appendChild(opt);
   });
 
-  const { data: players } = await sb.from("players").select("*").order("created_at");
+  const { data: players } = await sb.rpc("admin_list_players", { p_admin_pin: currentPlayer.pin });
   els.adminPlayerList.innerHTML = "";
   (players || []).forEach((p) => {
     const row = document.createElement("div");
     row.className = "roster-row";
-    row.innerHTML = `<span class="clickable-name" data-player-id="${p.id}">${escapeHtml(p.name)}</span>${p.is_admin ? " (admin)" : ""}<span class="roster-row__tag">PIN ${escapeHtml(p.pin)}</span>`;
+    row.innerHTML = `
+      <span><span class="clickable-name" data-player-id="${p.id}">${escapeHtml(p.name)}</span>${p.is_admin ? " (admin)" : ""}</span>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <span class="roster-row__tag">PIN ${escapeHtml(p.pin)}</span>
+        <button class="btn btn--secondary edit-pin-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}" style="padding:5px 10px;font-size:11px;">Edit</button>
+        <button class="btn btn--secondary delete-player-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}" style="padding:5px 10px;font-size:11px;">Delete</button>
+      </span>`;
     els.adminPlayerList.appendChild(row);
   });
   wireClickableNames(els.adminPlayerList);
+
+  document.querySelectorAll(".edit-pin-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const newPin = prompt(`New PIN for ${btn.dataset.name}:`);
+      if (!newPin || !newPin.trim()) return;
+      const { error } = await sb.rpc("admin_update_player_pin", {
+        p_target_id: btn.dataset.id,
+        p_new_pin: newPin.trim(),
+        p_admin_pin: currentPlayer.pin,
+      });
+      if (error) {
+        alert("Couldn't update PIN: " + error.message);
+        return;
+      }
+      await loadAdminData();
+    })
+  );
+
+  document.querySelectorAll(".delete-player-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      if (!confirm(`Delete ${btn.dataset.name}? This can't be undone.`)) return;
+      const { error } = await sb.rpc("admin_delete_player", {
+        p_target_id: btn.dataset.id,
+        p_admin_pin: currentPlayer.pin,
+      });
+      if (error) {
+        alert("Couldn't delete worker: " + error.message);
+        return;
+      }
+      await loadAdminData();
+      await loadTeamsList();
+      await renderTeamLeaderboard();
+    })
+  );
 }
 
 if (els.addPlayerForm) {
@@ -630,11 +676,12 @@ if (els.addTeamForm) {
     e.preventDefault();
     const name = document.getElementById("new-team-name").value.trim();
 
-    const { error } = await sb.from("teams").insert({ name, status: "approved" });
+    const { data: newTeam, error } = await sb.from("teams").insert({ name }).select().single();
     if (error) {
       alert("Couldn't add team: " + error.message);
       return;
     }
+    await sb.rpc("admin_set_team_status", { p_team_id: newTeam.id, p_status: "approved", p_admin_pin: currentPlayer.pin });
     e.target.reset();
     await loadAdminData();
     await loadTeamsList();
