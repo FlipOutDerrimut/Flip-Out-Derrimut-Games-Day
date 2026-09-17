@@ -8,6 +8,12 @@
   --fo-grey: #F4F4F4;
   --fo-black: #000000;
 
+  /* Approved Christmas decor palette (sampled from Marketing's decor sheet) */
+  --xmas-red: #EF381F;
+  --xmas-mint: #A2DEAF;
+  --xmas-pink: #F8A6C4;
+  --xmas-green: #2C8F5F;
+
   --font-display: 'Unbounded', sans-serif;
   --font-body: 'Manrope', sans-serif;
 
@@ -34,10 +40,22 @@ html, body {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  position: relative;
+  overflow: hidden;
   background:
     repeating-linear-gradient(115deg, rgba(153,198,62,0.08) 0 2px, transparent 2px 14px),
     var(--fo-velvet);
 }
+
+.login-sticker {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+}
+.login-sticker--tl { top: -20px; left: -18px; width: 130px; transform: rotate(-12deg); }
+.login-sticker--br { bottom: -10px; right: -14px; width: 110px; transform: rotate(8deg); }
+
+.login-card { position: relative; z-index: 1; }
 
 .login-card {
   width: 100%;
@@ -159,6 +177,17 @@ html, body {
   box-shadow: 0 1px 0 rgba(15,4,29,0.06);
 }
 .card--muted { background: #E9E9E9; color: #4A4A4A; font-size: 14px; line-height: 1.5; }
+.card--mint { background: var(--xmas-mint); }
+.card--pink { background: var(--xmas-pink); }
+.card--xmas-green { background: var(--xmas-green); color: var(--fo-white); }
+.card--xmas-green .card__sub, .card--xmas-green .card__heading, .card--xmas-green .card__eyebrow { color: rgba(255,255,255,0.85); }
+
+.tab-mascot {
+  display: block;
+  width: 92px;
+  height: auto;
+  margin: -6px auto 6px;
+}
 .card__eyebrow { margin: 0; font-size: 12px; color: var(--fo-purple); font-weight: 700; }
 .card__big { font-family: var(--font-display); font-size: 24px; font-weight: 700; margin: 4px 0; }
 .card__sub { margin: 0; color: #6B6B6B; font-size: 14px; }
@@ -393,10 +422,7 @@ html, body {
 .team-roster-expand { margin-top: 8px; padding-left: 8px; }
 
 /* ===== PARTY COUNTDOWN (Home) ===== */
-.party-countdown-card {
-  background: linear-gradient(135deg, var(--fo-purple), var(--fo-pink));
-  text-align: center;
-}
+.party-countdown-card { text-align: center; }
 .party-countdown-card .card__eyebrow { color: rgba(255,255,255,0.85); }
 .party-countdown__time {
   font-family: var(--font-display);
