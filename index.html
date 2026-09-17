@@ -14,12 +14,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="css/style.css?v=9" />
+<link rel="stylesheet" href="css/style.css?v=11" />
 </head>
 <body>
 
 <!-- ===================== LOGIN VIEW ===================== -->
 <section id="view-login" class="view view--login">
+  <img src="assets/christmas/Misteltoe.png" alt="" class="login-sticker login-sticker--tl" />
+  <img src="assets/christmas/Merry_Christmas_Days.png" alt="" class="login-sticker login-sticker--br" />
   <div class="login-card">
     <img src="assets/flipout-wordmark.png" alt="Flip Out" class="login-card__logo" />
     <p class="login-card__eyebrow">Never Stop Creating Fun</p>
@@ -58,7 +60,8 @@
     <section id="view-home" class="view">
       <h2 class="view-title">Home</h2>
 
-      <div class="card party-countdown-card">
+      <div class="card card--xmas-green party-countdown-card">
+        <img src="assets/christmas/Santa_Whistle.png" alt="" class="tab-mascot" style="width:110px;" />
         <p class="card__eyebrow">🎄 Flip Out Christmas Party</p>
         <div class="party-countdown js-countdown" data-target="">
           <div class="party-countdown__time">—</div>
@@ -95,15 +98,17 @@
 
     <!-- TEAMS (placeholder) -->
     <section id="view-teams" class="view" hidden>
+      <img src="assets/christmas/Present.png" alt="" class="tab-mascot" style="width:90px;" />
       <h2 class="view-title">Teams</h2>
       <div id="teams-list" class="stack"></div>
     </section>
 
     <!-- CHEERS & LEADERBOARD -->
     <section id="view-cheers" class="view" hidden>
+      <img src="assets/christmas/Jinfgle_Bell.png" alt="" class="tab-mascot" />
       <h2 class="view-title">Cheers &amp; Leaderboard</h2>
 
-      <div class="card">
+      <div class="card card--mint">
         <h3 class="card__heading">Team leaderboard</h3>
         <div id="team-leaderboard" class="stack"></div>
       </div>
@@ -142,9 +147,10 @@
 
     <!-- WELLBEING: weather, sunscreen, water -->
     <section id="view-wellbeing" class="view" hidden>
+      <img src="assets/christmas/Raindeer.png" alt="" class="tab-mascot" />
       <h2 class="view-title">Wellbeing</h2>
 
-      <div class="card">
+      <div class="card card--pink">
         <h3 class="card__heading">Right now</h3>
         <div id="weather-card">Loading weather…</div>
       </div>
@@ -170,6 +176,7 @@
 
     <!-- BEACH VOTE -->
     <section id="view-beach" class="view" hidden>
+      <img src="assets/christmas/Snow_globe.png" alt="" class="tab-mascot" style="width:130px;" />
       <h2 class="view-title">Beach Vote 🏖️</h2>
 
       <div class="card">
@@ -194,9 +201,10 @@
 
     <!-- SCHEDULE: timetable + countdowns -->
     <section id="view-schedule" class="view" hidden>
+      <img src="assets/christmas/Slegde.png" alt="" class="tab-mascot" style="width:110px;" />
       <h2 class="view-title">Schedule</h2>
 
-      <div class="card">
+      <div class="card card--xmas-green">
         <h3 class="card__heading">Countdowns</h3>
         <div id="countdowns-list" class="stack"></div>
       </div>
