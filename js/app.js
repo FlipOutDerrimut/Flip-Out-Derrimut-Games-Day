@@ -186,6 +186,18 @@ async function init() {
 }
 
 // ---------- ENTER APP ----------
+// Every startup step runs inside step() so that one broken section can't
+// stop the rest of the app from loading. Before this, a single failure here
+// silently killed every feature listed after it.
+async function step(label, fn) {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[startup] ${label} failed:`, err);
+    showFatalError(`${label} didn't load — ${err && err.message ? err.message : err}`);
+  }
+}
+
 async function enterApp() {
   showAppShell(true);
 
@@ -195,29 +207,29 @@ async function enterApp() {
   els.adminTab.hidden = true; // always start hidden; only unhidden below if this login is actually an admin
   if (currentPlayer.is_admin) {
     els.adminTab.hidden = false;
-    await loadAdminData();
-    await loadPendingTeams();
-    await loadPendingJoinRequests();
-    await populateNominatePlayerSelect();
-    await renderAwardsTally();
-    await renderAdminCountdowns();
-    await renderAdminTimetable();
-    await renderAdminBeachOptions();
-    await loadEventDateIntoAdminForm();
+    await step("Admin workers list", loadAdminData);
+    await step("Teams awaiting approval", loadPendingTeams);
+    await step("Join requests awaiting approval", loadPendingJoinRequests);
+    await step("Award nominations", populateNominatePlayerSelect);
+    await step("Awards tally", renderAwardsTally);
+    await step("Admin countdowns", renderAdminCountdowns);
+    await step("Admin timetable", renderAdminTimetable);
+    await step("Admin beach options", renderAdminBeachOptions);
+    await step("Party date", loadEventDateIntoAdminForm);
   }
 
-  await loadEventSettings();
-  await renderMyTeam();
-  await loadTeamsList();
-  await renderTeamLeaderboard();
-  await populateCheerTeamSelect();
-  await populateCheerPlayerSelect();
-  await loadCheersFeed();
-  await renderWeather();
-  await renderWellbeingStatus();
-  await renderMyDetails();
-  await renderBeachVote();
-  await renderSchedule();
+  await step("Event settings", loadEventSettings);
+  await step("Your team", renderMyTeam);
+  await step("Teams list", loadTeamsList);
+  await step("Leaderboard", renderTeamLeaderboard);
+  await step("Cheer team list", populateCheerTeamSelect);
+  await step("Cheer player list", populateCheerPlayerSelect);
+  await step("Cheers feed", loadCheersFeed);
+  await step("Weather", renderWeather);
+  await step("Wellbeing", renderWellbeingStatus);
+  await step("Your details", renderMyDetails);
+  await step("Beach vote", renderBeachVote);
+  await step("Schedule", renderSchedule);
 
   const TUTORIAL_KEY = "fo_games_day_tutorial_seen";
   if (!localStorage.getItem(TUTORIAL_KEY) && els.tutorialModal) {
@@ -250,6 +262,18 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str == null ? "" : String(str);
   return div.innerHTML;
+}
+
+// Generate the row id ourselves so we don't depend on being able to read the
+// row back after inserting it — under RLS, .insert().select() fails whenever
+// the SELECT policy doesn't cover the new row, even though the insert worked.
+function newId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 // ---------- PHASE 6: PLAYER PROFILE / STATS MODAL ----------
@@ -321,6 +345,8 @@ async function renderMyTeam() {
       .select("*")
       .eq("player_id", currentPlayer.id)
       .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (joinReq) {
@@ -561,18 +587,28 @@ async function renderNoTeamState() {
       logoUrl = sb.storage.from("team-logos").getPublicUrl(path).data.publicUrl;
     }
 
-    const { data: newTeam, error } = await sb
+    // status is set explicitly rather than relying on a column default —
+    // a team with a NULL status never shows up in the admin's pending list.
+    const newTeamId = newId();
+    const { error } = await sb
       .from("teams")
-      .insert({ name, logo_url: logoUrl })
-      .select()
-      .single();
+      .insert({ id: newTeamId, name, logo_url: logoUrl, status: "pending" });
     if (error) {
       errEl.textContent = "Couldn't create team: " + error.message;
       errEl.hidden = false;
       return;
     }
 
-    await sb.from("players").update({ team_id: newTeam.id }).eq("id", currentPlayer.id);
+    const { error: linkError } = await sb
+      .from("players")
+      .update({ team_id: newTeamId })
+      .eq("id", currentPlayer.id);
+    if (linkError) {
+      errEl.textContent = "Team was created but couldn't be linked to you: " + linkError.message;
+      errEl.hidden = false;
+      return;
+    }
+
     await renderMyTeam();
     await loadTeamsList();
     if (currentPlayer.is_admin) await loadPendingTeams();
@@ -580,11 +616,25 @@ async function renderNoTeamState() {
 
   document.querySelectorAll(".join-team-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const { error } = await sb
-        .from("team_join_requests")
-        .upsert({ player_id: currentPlayer.id, team_id: btn.dataset.teamId, status: "pending" }, { onConflict: "player_id" });
+      btn.disabled = true;
+      btn.textContent = "Sending…";
+
+      // Delete-then-insert rather than upsert: the old upsert used
+      // onConflict:"player_id", which only works if there's a UNIQUE
+      // constraint on that column. Without one, Postgres rejects the whole
+      // statement and no request is ever created.
+      await sb.from("team_join_requests").delete().eq("player_id", currentPlayer.id);
+
+      const { error } = await sb.from("team_join_requests").insert({
+        player_id: currentPlayer.id,
+        team_id: btn.dataset.teamId,
+        status: "pending",
+      });
+
       if (error) {
         alert("Couldn't send join request: " + error.message);
+        btn.disabled = false;
+        btn.textContent = "Join";
         return;
       }
       await renderMyTeam();
@@ -675,6 +725,73 @@ async function loadPendingTeams() {
   );
 }
 
+// ---------- ADMIN: PENDING JOIN REQUESTS ----------
+// This function was being called on startup but never existed, which threw a
+// ReferenceError and stopped every later startup step from running.
+async function loadPendingJoinRequests() {
+  if (!els.pendingJoinsList) return;
+
+  const { data: requests, error } = await sb
+    .from("team_join_requests")
+    .select("*")
+    .eq("status", "pending")
+    .order("created_at");
+
+  els.pendingJoinsList.innerHTML = "";
+
+  if (error) {
+    els.pendingJoinsList.innerHTML = `<p class="card__sub">Couldn't load join requests: ${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  if (!requests || requests.length === 0) {
+    els.pendingJoinsList.innerHTML = `<p class="card__sub">No join requests waiting on approval.</p>`;
+    return;
+  }
+
+  const [{ data: players }, { data: teams }] = await Promise.all([
+    sb.from("players").select("id, name").in("id", requests.map((r) => r.player_id)),
+    sb.from("teams").select("id, name").in("id", requests.map((r) => r.team_id)),
+  ]);
+  const playerNameById = {};
+  (players || []).forEach((p) => (playerNameById[p.id] = p.name));
+  const teamNameById = {};
+  (teams || []).forEach((t) => (teamNameById[t.id] = t.name));
+
+  requests.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "roster-row";
+    row.innerHTML = `
+      <span>${escapeHtml(playerNameById[r.player_id] || "Someone")} → <strong>${escapeHtml(teamNameById[r.team_id] || "a team")}</strong></span>
+      <span>
+        <button class="btn btn--primary approve-join-btn" data-id="${r.id}" style="padding:6px 12px;font-size:12px;">Approve</button>
+        <button class="btn btn--secondary reject-join-btn" data-id="${r.id}" style="padding:6px 12px;font-size:12px;">Reject</button>
+      </span>`;
+    els.pendingJoinsList.appendChild(row);
+  });
+
+  async function setJoinStatus(requestId, status) {
+    const { error } = await sb.rpc("admin_set_join_request_status", {
+      p_request_id: requestId,
+      p_status: status,
+      p_admin_pin: currentPlayer.pin,
+    });
+    if (error) {
+      alert(`Couldn't ${status === "approved" ? "approve" : "reject"} that request: ` + error.message);
+      return;
+    }
+    await loadPendingJoinRequests();
+    await loadTeamsList();
+    await renderMyTeam();
+  }
+
+  els.pendingJoinsList.querySelectorAll(".approve-join-btn").forEach((btn) =>
+    btn.addEventListener("click", () => setJoinStatus(btn.dataset.id, "approved"))
+  );
+  els.pendingJoinsList.querySelectorAll(".reject-join-btn").forEach((btn) =>
+    btn.addEventListener("click", () => setJoinStatus(btn.dataset.id, "rejected"))
+  );
+}
+
 // ---------- ADMIN: WORKERS & TEAMS (Phase 1, kept as-is) ----------
 async function loadAdminData() {
   const { data: teams } = await sb.from("teams").select("*").order("created_at");
@@ -759,12 +876,20 @@ if (els.addTeamForm) {
     e.preventDefault();
     const name = document.getElementById("new-team-name").value.trim();
 
-    const { data: newTeam, error } = await sb.from("teams").insert({ name }).select().single();
+    const newTeamId = newId();
+    const { error } = await sb.from("teams").insert({ id: newTeamId, name, status: "pending" });
     if (error) {
       alert("Couldn't add team: " + error.message);
       return;
     }
-    await sb.rpc("admin_set_team_status", { p_team_id: newTeam.id, p_status: "approved", p_admin_pin: currentPlayer.pin });
+    const { error: statusError } = await sb.rpc("admin_set_team_status", {
+      p_team_id: newTeamId,
+      p_status: "approved",
+      p_admin_pin: currentPlayer.pin,
+    });
+    if (statusError) {
+      alert("Team was added but couldn't be approved: " + statusError.message);
+    }
     e.target.reset();
     await loadAdminData();
     await loadTeamsList();
@@ -831,15 +956,26 @@ async function populateCheerTeamSelect() {
 }
 
 async function populateCheerPlayerSelect() {
-  const { data: players } = await sb.from("players").select("id, name, team_id").not("team_id", "is", null).order("name");
+  // The old version filtered to .not("team_id","is",null), so the dropdown was
+  // empty until teams existed. Everyone is listed now; the team is just a label.
+  const { data: players, error } = await sb.from("players").select("id, name, team_id").order("name");
   const { data: teams } = await sb.from("teams").select("id, name");
   const teamNameById = {};
   (teams || []).forEach((t) => (teamNameById[t.id] = t.name));
 
-  els.cheerPlayerSelect.innerHTML = (players || [])
+  if (error) {
+    els.cheerPlayerSelect.innerHTML = `<option value="">Couldn't load players</option>`;
+    return;
+  }
+  if (!players || players.length === 0) {
+    els.cheerPlayerSelect.innerHTML = `<option value="">No players yet</option>`;
+    return;
+  }
+
+  els.cheerPlayerSelect.innerHTML = players
     .map(
       (p) =>
-        `<option value="${p.id}" data-team-id="${p.team_id}">${escapeHtml(p.name)} (${escapeHtml(teamNameById[p.team_id] || "no team")})</option>`
+        `<option value="${p.id}" data-team-id="${p.team_id || ""}">${escapeHtml(p.name)} (${escapeHtml(teamNameById[p.team_id] || "no team")})</option>`
     )
     .join("");
 }
@@ -861,13 +997,19 @@ if (els.sendCheerForm) {
     let team_id, player_id;
     if (isPlayer) {
       const opt = els.cheerPlayerSelect.selectedOptions[0];
-      if (!opt) return;
+      if (!opt || !opt.value) {
+        alert("Pick a player to cheer for first.");
+        return;
+      }
       player_id = opt.value;
-      team_id = opt.dataset.teamId;
+      team_id = opt.dataset.teamId || null; // a player with no team sends team_id as null, not the string "undefined"
     } else {
-      team_id = els.cheerTeamSelect.value;
+      team_id = els.cheerTeamSelect.value || null;
       player_id = null;
-      if (!team_id) return;
+      if (!team_id) {
+        alert("There aren't any approved teams to cheer for yet.");
+        return;
+      }
     }
 
     const { error } = await sb.from("cheers").insert({
@@ -880,7 +1022,9 @@ if (els.sendCheerForm) {
       alert("Couldn't send cheer: " + error.message);
       return;
     }
-    await sb.from("points_log").insert({ player_id: currentPlayer.id, team_id, points: 10, reason: "cheer" });
+    if (team_id) {
+      await sb.from("points_log").insert({ player_id: currentPlayer.id, team_id, points: 10, reason: "cheer" });
+    }
 
     els.cheerMessage.value = "";
     await renderTeamLeaderboard();
