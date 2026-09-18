@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="css/style.css?v=11" />
+<link rel="stylesheet" href="css/style.css?v=12" />
 </head>
 <body>
 
@@ -113,8 +113,9 @@
         <div id="team-leaderboard" class="stack"></div>
       </div>
 
-      <div class="card">
+      <div class="card card--pink">
         <h3 class="card__heading">Send a cheer</h3>
+        <p id="cheers-gate-note" class="card__sub" style="margin-bottom:12px;"></p>
         <form id="send-cheer-form" class="stack-form">
           <label class="field">
             <span>Cheer for</span>
@@ -209,7 +210,7 @@
         <div id="countdowns-list" class="stack"></div>
       </div>
 
-      <div class="card">
+      <div class="card card--pink">
         <h3 class="card__heading">Timetable</h3>
         <div id="timetable-list" class="stack"></div>
       </div>
@@ -247,6 +248,11 @@
           <button type="submit" class="btn btn--secondary btn--block">Add nomination</button>
         </form>
         <div id="awards-tally" class="stack" style="margin-top:14px;"></div>
+      </div>
+
+      <div class="card">
+        <h3 class="card__heading">Join requests awaiting approval</h3>
+        <div id="pending-joins-list" class="stack"></div>
       </div>
 
       <div class="card">
@@ -341,6 +347,22 @@
 
 </div>
 
+<!-- FIRST-LOGIN TUTORIAL -->
+<div id="tutorial-modal" class="modal-overlay" hidden>
+  <div class="modal-card">
+    <h3 class="team-header__name">Welcome to Games Day! 🎄</h3>
+    <p class="card__sub" style="margin-top:6px;">Quick tour before you dive in:</p>
+    <div class="stack" style="margin-top:14px;">
+      <p class="card__sub">🏠 <strong>Home</strong> — join or create your team, pick your player number, and go for Team Leader, Driver, or First Aid Supervisor.</p>
+      <p class="card__sub">🎉 <strong>Cheers</strong> — send praise to teams or players. Heads up: cheers don't affect the leaderboard until party day — but send some now so you've got the hang of it!</p>
+      <p class="card__sub">☀️ <strong>Wellbeing</strong> — log sunscreen and water for bonus points (also kick in on party day).</p>
+      <p class="card__sub">🏖️ <strong>Beach</strong> — suggest and vote for the Christmas beach.</p>
+      <p class="card__sub">📅 <strong>Schedule</strong> — the day's timetable and countdowns.</p>
+    </div>
+    <button id="tutorial-close-btn" class="btn btn--primary btn--block" style="margin-top:18px;">Got it, let's flip!</button>
+  </div>
+</div>
+
 <!-- PLAYER PROFILE MODAL -->
 <div id="player-profile-modal" class="modal-overlay" hidden>
   <div class="modal-card">
@@ -350,7 +372,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/config.js?v=10"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/config.js?v=11"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>
