@@ -51,8 +51,10 @@ const els = {
   newPlayerTeamSelect: document.getElementById("new-player-team"),
   adminPlayerList: document.getElementById("admin-player-list"),
   pendingTeamsList: document.getElementById("pending-teams-list"),
+  pendingJoinsList: document.getElementById("pending-joins-list"),
   teamsList: document.getElementById("teams-list"),
   teamLeaderboard: document.getElementById("team-leaderboard"),
+  cheersGateNote: document.getElementById("cheers-gate-note"),
   sendCheerForm: document.getElementById("send-cheer-form"),
   cheerTargetType: document.getElementById("cheer-target-type"),
   cheerTeamField: document.getElementById("cheer-team-field"),
@@ -96,6 +98,8 @@ const els = {
   playerProfileModal: document.getElementById("player-profile-modal"),
   playerProfileContent: document.getElementById("player-profile-content"),
   playerProfileClose: document.getElementById("player-profile-close"),
+  tutorialModal: document.getElementById("tutorial-modal"),
+  tutorialCloseBtn: document.getElementById("tutorial-close-btn"),
 };
 
 let currentPlayer = null;
@@ -193,6 +197,7 @@ async function enterApp() {
     els.adminTab.hidden = false;
     await loadAdminData();
     await loadPendingTeams();
+    await loadPendingJoinRequests();
     await populateNominatePlayerSelect();
     await renderAwardsTally();
     await renderAdminCountdowns();
@@ -213,6 +218,18 @@ async function enterApp() {
   await renderMyDetails();
   await renderBeachVote();
   await renderSchedule();
+
+  const TUTORIAL_KEY = "fo_games_day_tutorial_seen";
+  if (!localStorage.getItem(TUTORIAL_KEY) && els.tutorialModal) {
+    els.tutorialModal.hidden = false;
+  }
+}
+
+if (document.getElementById("tutorial-close-btn")) {
+  document.getElementById("tutorial-close-btn").addEventListener("click", () => {
+    localStorage.setItem("fo_games_day_tutorial_seen", "1");
+    els.tutorialModal.hidden = true;
+  });
 }
 
 // Re-fetch this player's own row (their team_id / player_number may have
@@ -299,6 +316,33 @@ async function renderMyTeam() {
   await refreshCurrentPlayer();
 
   if (!currentPlayer.team_id) {
+    const { data: joinReq } = await sb
+      .from("team_join_requests")
+      .select("*")
+      .eq("player_id", currentPlayer.id)
+      .eq("status", "pending")
+      .maybeSingle();
+
+    if (joinReq) {
+      const { data: reqTeam } = await sb.from("teams").select("name").eq("id", joinReq.team_id).maybeSingle();
+      els.myTeamSection.innerHTML = `
+        <div class="card">
+          <div class="team-header">
+            <div>
+              <p class="team-header__name">${escapeHtml(reqTeam ? reqTeam.name : "That team")}</p>
+              <span class="badge badge--pending">Join request awaiting approval</span>
+            </div>
+          </div>
+          <p class="card__sub">Your admin needs to approve this before you're on the roster.</p>
+          <button id="cancel-join-btn" class="btn btn--secondary btn--block" style="margin-top:12px;">Cancel request</button>
+        </div>`;
+      document.getElementById("cancel-join-btn").addEventListener("click", async () => {
+        await sb.from("team_join_requests").delete().eq("player_id", currentPlayer.id);
+        await renderMyTeam();
+      });
+      return;
+    }
+
     await renderNoTeamState();
     return;
   }
@@ -351,6 +395,8 @@ async function renderMyTeam() {
     .order("player_number", { ascending: true, nullsFirst: false });
 
   const leader = (members || []).find((m) => m.id === team.leader_id);
+  const driver = (members || []).find((m) => m.id === team.driver_id);
+  const firstAid = (members || []).find((m) => m.id === team.first_aid_id);
 
   let numberSectionHtml = "";
   if (currentPlayer.player_number == null) {
@@ -365,26 +411,33 @@ async function renderMyTeam() {
       </form>`;
   }
 
-  let leaderSectionHtml = "";
-  if (!team.leader_id) {
-    leaderSectionHtml = `<button id="become-leader-btn" class="btn btn--secondary btn--block" style="margin-top:12px;">Become team leader</button>`;
-  } else if (team.leader_id === currentPlayer.id) {
-    leaderSectionHtml = `<p class="card__sub" style="margin-top:12px;">You're the team leader <span class="leader-star">★</span></p>`;
-  } else if (leader) {
-    leaderSectionHtml = `<p class="card__sub" style="margin-top:12px;">Team leader: <span class="clickable-name" data-player-id="${leader.id}">${escapeHtml(leader.name)}</span> <span class="leader-star">★</span></p>`;
+  function roleSectionHtml(roleId, roleHolder, icon, label, claimBtnId, claimBtnText) {
+    if (!roleId) return `<button id="${claimBtnId}" class="btn btn--secondary btn--block" style="margin-top:10px;">${claimBtnText}</button>`;
+    if (roleId === currentPlayer.id) return `<p class="card__sub" style="margin-top:10px;">You're the ${label} <span class="leader-star">${icon}</span></p>`;
+    if (roleHolder) return `<p class="card__sub" style="margin-top:10px;">${label}: <span class="clickable-name" data-player-id="${roleHolder.id}">${escapeHtml(roleHolder.name)}</span> <span class="leader-star">${icon}</span></p>`;
+    return "";
   }
 
+  const leaderSectionHtml = roleSectionHtml(team.leader_id, leader, "★", "team leader", "become-leader-btn", "Become team leader");
+  const driverSectionHtml = roleSectionHtml(team.driver_id, driver, "🚗", "team driver", "become-driver-btn", "Become team driver (Green P plates or above)");
+  const firstAidSectionHtml = roleSectionHtml(team.first_aid_id, firstAid, "➕", "First Aid Supervisor", "become-firstaid-btn", "Become First Aid Supervisor");
+
   const rosterHtml = (members || [])
-    .map(
-      (m) => `
+    .map((m) => {
+      const badges = [
+        m.id === team.leader_id ? '<span class="leader-star">★</span>' : "",
+        m.id === team.driver_id ? '<span class="leader-star">🚗</span>' : "",
+        m.id === team.first_aid_id ? '<span class="leader-star">➕</span>' : "",
+      ].join("");
+      return `
       <div class="member-row">
-        <span>${m.player_number != null ? `<span class="member-row__number">${m.player_number}</span>` : ""}<span class="clickable-name" data-player-id="${m.id}">${escapeHtml(m.name)}</span>${m.id === team.leader_id ? '<span class="leader-star">★</span>' : ""}</span>
-      </div>`
-    )
+        <span>${m.player_number != null ? `<span class="member-row__number">${m.player_number}</span>` : ""}<span class="clickable-name" data-player-id="${m.id}">${escapeHtml(m.name)}</span>${badges}</span>
+      </div>`;
+    })
     .join("");
 
   els.myTeamSection.innerHTML = `
-    <div class="card">
+    <div class="card card--mint">
       <div class="team-header">
         ${team.logo_url ? `<img src="${escapeHtml(team.logo_url)}" class="team-header__logo" alt="">` : ""}
         <div>
@@ -393,7 +446,13 @@ async function renderMyTeam() {
         </div>
       </div>
       ${numberSectionHtml}
+    </div>
+    <div class="card">
+      <h3 class="card__heading">Team roles</h3>
+      <p class="card__sub">Ideally the same person covers all three — but any combination works.</p>
       ${leaderSectionHtml}
+      ${driverSectionHtml}
+      ${firstAidSectionHtml}
     </div>
     <div class="card">
       <h3 class="card__heading">Team roster</h3>
@@ -425,6 +484,24 @@ async function renderMyTeam() {
   if (leaderBtn) {
     leaderBtn.addEventListener("click", async () => {
       await sb.from("teams").update({ leader_id: currentPlayer.id }).eq("id", team.id).is("leader_id", null);
+      await renderMyTeam();
+    });
+  }
+
+  const driverBtn = document.getElementById("become-driver-btn");
+  if (driverBtn) {
+    driverBtn.addEventListener("click", async () => {
+      if (!confirm("By claiming this role, you're confirming you hold a Green P plate licence or above. Continue?")) return;
+      await sb.from("teams").update({ driver_id: currentPlayer.id }).eq("id", team.id).is("driver_id", null);
+      await renderMyTeam();
+    });
+  }
+
+  const firstAidBtn = document.getElementById("become-firstaid-btn");
+  if (firstAidBtn) {
+    firstAidBtn.addEventListener("click", async () => {
+      if (!confirm("This makes you your team's go-to person for first aid on the day. It doesn't replace an official first aid certificate — just say yes if you're happy being that point of contact. Continue?")) return;
+      await sb.from("teams").update({ first_aid_id: currentPlayer.id }).eq("id", team.id).is("first_aid_id", null);
       await renderMyTeam();
     });
   }
@@ -503,7 +580,13 @@ async function renderNoTeamState() {
 
   document.querySelectorAll(".join-team-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      await sb.from("players").update({ team_id: btn.dataset.teamId }).eq("id", currentPlayer.id);
+      const { error } = await sb
+        .from("team_join_requests")
+        .upsert({ player_id: currentPlayer.id, team_id: btn.dataset.teamId, status: "pending" }, { onConflict: "player_id" });
+      if (error) {
+        alert("Couldn't send join request: " + error.message);
+        return;
+      }
       await renderMyTeam();
     });
   });
@@ -706,7 +789,7 @@ async function renderTeamLeaderboard() {
   const totals = {};
   (allPoints || []).forEach((p) => {
     if (!p.team_id) return;
-    if (!eventHasStarted && p.reason !== "cheer") return; // sunscreen/water don't count until party day
+    if (!eventHasStarted) return; // nothing counts on the leaderboard until party day — see the note under Send a Cheer
     totals[p.team_id] = (totals[p.team_id] || 0) + p.points;
   });
 
@@ -716,7 +799,7 @@ async function renderTeamLeaderboard() {
 
   const noteHtml = eventHasStarted
     ? ""
-    : `<p class="card__sub" style="margin-top:10px;">Cheers count now — sunscreen &amp; water points start counting on party day, keep logging so it's ready to go!</p>`;
+    : `<p class="card__sub" style="margin-top:10px;">Scores start counting from party day — everyone's on 0 for now, but keep practising below!</p>`;
 
   els.teamLeaderboard.innerHTML =
     (ranked.length
@@ -731,6 +814,12 @@ async function renderTeamLeaderboard() {
           )
           .join("")
       : `<p class="card__sub">No approved teams yet.</p>`) + noteHtml;
+
+  if (els.cheersGateNote) {
+    els.cheersGateNote.textContent = eventHasStarted
+      ? "Every cheer, sunscreen log, and water break now earns real points for your team!"
+      : "🎉 Cheers don't affect the leaderboard until party day — but send some now anyway, so you've got the hang of it when it counts!";
+  }
 }
 
 // ---------- PHASE 3: SEND A CHEER ----------
