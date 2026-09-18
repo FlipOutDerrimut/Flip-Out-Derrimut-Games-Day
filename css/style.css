@@ -334,8 +334,8 @@ html, body {
   margin-top: 8px;
 }
 .reminder-banner {
-  background: var(--fo-pink);
-  color: var(--fo-velvet);
+  background: var(--xmas-red);
+  color: var(--fo-white);
   font-weight: 700;
   font-size: 13px;
   padding: 10px 14px;
