@@ -22,6 +22,17 @@ function showFatalError(message) {
   banner.textContent = "Something went wrong: " + message;
 }
 
+// Runs one init step in isolation — if it throws, only that feature is
+// affected (shown via the pink banner) instead of silently blocking every
+// step that comes after it in the startup sequence.
+async function safeRun(fn, label) {
+  try {
+    await fn();
+  } catch (err) {
+    showFatalError(label + " didn't load properly (" + err.message + ").");
+  }
+}
+
 // NOTE: named "sb", not "supabase" — Safari throws a page-wide SyntaxError
 // if a top-level let/const shares a name with an existing global (the
 // Supabase library itself creates window.supabase).
@@ -195,29 +206,29 @@ async function enterApp() {
   els.adminTab.hidden = true; // always start hidden; only unhidden below if this login is actually an admin
   if (currentPlayer.is_admin) {
     els.adminTab.hidden = false;
-    await loadAdminData();
-    await loadPendingTeams();
-    await loadPendingJoinRequests();
-    await populateNominatePlayerSelect();
-    await renderAwardsTally();
-    await renderAdminCountdowns();
-    await renderAdminTimetable();
-    await renderAdminBeachOptions();
-    await loadEventDateIntoAdminForm();
+    await safeRun(loadAdminData, "Worker list");
+    await safeRun(loadPendingTeams, "Pending teams");
+    await safeRun(loadPendingJoinRequests, "Pending join requests");
+    await safeRun(populateNominatePlayerSelect, "Award nominations");
+    await safeRun(renderAwardsTally, "Award tally");
+    await safeRun(renderAdminCountdowns, "Admin countdowns");
+    await safeRun(renderAdminTimetable, "Admin timetable");
+    await safeRun(renderAdminBeachOptions, "Admin beach options");
+    await safeRun(loadEventDateIntoAdminForm, "Party date field");
   }
 
-  await loadEventSettings();
-  await renderMyTeam();
-  await loadTeamsList();
-  await renderTeamLeaderboard();
-  await populateCheerTeamSelect();
-  await populateCheerPlayerSelect();
-  await loadCheersFeed();
-  await renderWeather();
-  await renderWellbeingStatus();
-  await renderMyDetails();
-  await renderBeachVote();
-  await renderSchedule();
+  await safeRun(loadEventSettings, "Party countdown");
+  await safeRun(renderMyTeam, "My Team");
+  await safeRun(loadTeamsList, "Teams list");
+  await safeRun(renderTeamLeaderboard, "Leaderboard");
+  await safeRun(populateCheerTeamSelect, "Cheer team list");
+  await safeRun(populateCheerPlayerSelect, "Cheer player list");
+  await safeRun(loadCheersFeed, "Cheers feed");
+  await safeRun(renderWeather, "Weather");
+  await safeRun(renderWellbeingStatus, "Wellbeing status");
+  await safeRun(renderMyDetails, "My details");
+  await safeRun(renderBeachVote, "Beach vote");
+  await safeRun(renderSchedule, "Schedule");
 
   const TUTORIAL_KEY = "fo_games_day_tutorial_seen";
   if (!localStorage.getItem(TUTORIAL_KEY) && els.tutorialModal) {
@@ -690,6 +701,57 @@ async function loadPendingTeams() {
       const { error } = await sb.rpc("admin_set_team_status", { p_team_id: btn.dataset.id, p_status: "rejected", p_admin_pin: currentPlayer.pin });
       if (error) { alert("Couldn't reject team: " + error.message); return; }
       await loadPendingTeams();
+    })
+  );
+}
+
+// ---------- ADMIN: PENDING JOIN REQUESTS ----------
+async function loadPendingJoinRequests() {
+  if (!els.pendingJoinsList) return;
+  const { data } = await sb.from("team_join_requests").select("*").eq("status", "pending").order("created_at");
+
+  if (!data || data.length === 0) {
+    els.pendingJoinsList.innerHTML = `<p class="card__sub">No join requests waiting.</p>`;
+    return;
+  }
+
+  const playerIds = data.map((r) => r.player_id);
+  const teamIds = data.map((r) => r.team_id);
+  const [{ data: reqPlayers }, { data: reqTeams }] = await Promise.all([
+    sb.from("players").select("id, name").in("id", playerIds),
+    sb.from("teams").select("id, name").in("id", teamIds),
+  ]);
+  const pName = {};
+  (reqPlayers || []).forEach((p) => (pName[p.id] = p.name));
+  const tName = {};
+  (reqTeams || []).forEach((t) => (tName[t.id] = t.name));
+
+  els.pendingJoinsList.innerHTML = data
+    .map(
+      (r) => `
+      <div class="roster-row">
+        <span>${escapeHtml(pName[r.player_id] || "?")} → ${escapeHtml(tName[r.team_id] || "?")}</span>
+        <span>
+          <button class="btn btn--primary approve-join-btn" data-id="${r.id}" style="padding:6px 12px;font-size:12px;">Approve</button>
+          <button class="btn btn--secondary reject-join-btn" data-id="${r.id}" style="padding:6px 12px;font-size:12px;">Reject</button>
+        </span>
+      </div>`
+    )
+    .join("");
+
+  document.querySelectorAll(".approve-join-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const { error } = await sb.rpc("admin_set_join_request_status", { p_request_id: btn.dataset.id, p_status: "approved", p_admin_pin: currentPlayer.pin });
+      if (error) { alert("Couldn't approve: " + error.message); return; }
+      await loadPendingJoinRequests();
+      await loadTeamsList();
+    })
+  );
+  document.querySelectorAll(".reject-join-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const { error } = await sb.rpc("admin_set_join_request_status", { p_request_id: btn.dataset.id, p_status: "rejected", p_admin_pin: currentPlayer.pin });
+      if (error) { alert("Couldn't reject: " + error.message); return; }
+      await loadPendingJoinRequests();
     })
   );
 }
